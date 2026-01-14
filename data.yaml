@@ -1,0 +1,21 @@
+# Hazard Detection Dataset Configuration
+# Supports 8 Core Hazard Classes for Disaster Response
+
+# Path to dataset (Absolute or relative to this file)
+path: datasets # Relative to this file (data.yaml)
+
+# Train/Val/Test images
+train: images/train
+val: images/val
+test: images/test 
+
+# Class Names
+names:
+  0: Fire
+  1: Smoke
+  2: Flood
+  3: Falling Debris
+  4: Landslide
+  5: Explosion
+  6: Collapsed Structure
+  7: Industrial Accident
