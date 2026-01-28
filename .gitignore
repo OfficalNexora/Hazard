@@ -8,10 +8,14 @@ env/
 build/
 develop-eggs/
 dist/
+dist_release/
+build/
+node_modules/
+.next/
+backend/static/
+backend/system.db
+*.pt
 downloads/
-eggs/
-.eggs/
-lib/
 lib64/
 parts/
 sdist/
@@ -30,3 +34,9 @@ raw_data/
 # IDE
 .vscode/
 .idea/
+
+# AI
+AI/scripts/
+datasets/
+runs/
+

@@ -122,21 +122,21 @@ class NexoraLauncher(ctk.CTk):
         info_row.grid_columnconfigure((0, 1), weight=1)
 
         # IP ADDRESS CARD
-        ip_card = ctk.CTkFrame(info_row, border_width=1, border_color="#ffffff10")
+        ip_card = ctk.CTkFrame(info_row, border_width=1, border_color="#1e293b")
         ip_card.grid(row=0, column=0, padx=(0, 10), sticky="nsew")
         ctk.CTkLabel(ip_card, text="NETWORK ENDPOINT", font=ctk.CTkFont(size=10, weight="bold"), text_color="#10b981").pack(pady=(10, 0))
         self.ip_display = ctk.CTkLabel(ip_card, text=self.local_ip, font=ctk.CTkFont(size=28, weight="bold"))
         self.ip_display.pack(pady=10)
 
         # PAIRING CODE CARD
-        code_card = ctk.CTkFrame(info_row, border_width=1, border_color="#ffffff10")
+        code_card = ctk.CTkFrame(info_row, border_width=1, border_color="#1e293b")
         code_card.grid(row=0, column=1, padx=(10, 0), sticky="nsew")
         ctk.CTkLabel(code_card, text="PUBLIC PAIRING CODE", font=ctk.CTkFont(size=10, weight="bold"), text_color="#f59e0b").pack(pady=(10, 0))
         self.code_display = ctk.CTkLabel(code_card, text=self.pairing_code, font=ctk.CTkFont(size=28, weight="bold"))
         self.code_display.pack(pady=10)
 
         # LOGS SECTION
-        log_frame = ctk.CTkFrame(self.main, border_width=1, border_color="#ffffff05")
+        log_frame = ctk.CTkFrame(self.main, border_width=1, border_color="#1e293b")
         log_frame.grid(row=1, column=0, sticky="nsew", pady=10)
         log_frame.grid_rowconfigure(1, weight=1)
         log_frame.grid_columnconfigure(0, weight=1)
@@ -255,6 +255,8 @@ class NexoraLauncher(ctk.CTk):
                 stdout=subprocess.PIPE, 
                 stderr=subprocess.STDOUT, 
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 bufsize=1
             )
 

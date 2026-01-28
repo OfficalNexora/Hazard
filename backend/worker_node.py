@@ -16,13 +16,13 @@ WORKER_ID = socket.gethostname()
 def main():
     print(f"[Worker] Initializing Node: {WORKER_ID}")
     
-    # 1. Load Model (Load once!)
-    print("[Worker] Loading YOLOv8 model...")
-    # Using 'yolov8n.pt' for speed (Nano model)
+    # Load Model (Load once!)
+    print("[Worker] Loading Trained model...")
+    # Ensure the model path is correct. 'yolov8n.pt' is the default.
     model = YOLO("yolov8n.pt") 
     print("[Worker] Model loaded.")
 
-    # 2. Setup ZeroMQ
+    # Setup ZeroMQ
     context = zmq.Context()
 
     # Receive Frames (PULL)
@@ -39,21 +39,21 @@ def main():
     
     try:
         while True:
-            # 1. Receive Task
+            # -Receive Task
             payload = receiver.recv_json()
             frame_id = payload.get('frame_id')
             jpg_txt = payload.get('image')
             
-            # 2. Decode Image
+            # -Decode Image
             jpg_bytes = base64.b64decode(jpg_txt)
             np_arr = np.frombuffer(jpg_bytes, dtype=np.uint8)
             frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
-            # 3. Inference
-            # Run YOLO. agnostic=True for better merging later?
+            # -Inference
+            # Run Trained Model. Diagnostic=True for better merging later?
             results = model(frame, verbose=False) 
             
-            # 4. Extract Detections
+            # -Extract Detections
             detections = []
             for r in results:
                 for box in r.boxes:
@@ -70,7 +70,7 @@ def main():
                         "class_id": cls_id
                     })
 
-            # 5. Send Result
+            # -Send Result
             result_payload = {
                 "frame_id": frame_id,
                 "worker_id": WORKER_ID,

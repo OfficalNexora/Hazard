@@ -108,24 +108,29 @@ class WorkerManager:
                     data += chunk
                 
                 if not data: break
-                msg = json.loads(data.decode())
+                msg = json.loads(data.decode("utf-8", errors="replace"))
                 
                 # Handle message types
                 msg_type = msg.get('type')
                 
                 if msg_type == 'register':
                     worker_id = msg.get('worker_id')
-                    print(f"[WorkerManager] Registering worker: {worker_id} ({msg.get('name')})")
+                    specialty = msg.get('specialty', 'Generalist')
+                    role = msg.get('role', 'sub-worker')
+                    
+                    print(f"[WorkerManager] Registering {role}: {worker_id} (Specialty: {specialty})")
                     self.workers[worker_id] = {
                         "conn": conn,
                         "addr": addr,
                         "name": msg.get('name'),
                         "model": msg.get('model'),
+                        "specialty": specialty,
+                        "role": role,
                         "last_seen": time.time(),
                         "stats": {}
                     }
                     # Update global state
-                    state.update_device(worker_id, "worker_laptop", True, f"{addr[0]}:{addr[1]}")
+                    state.update_device(worker_id, f"worker_{specialty.lower().replace(' ', '_')}", True, f"{addr[0]}:{addr[1]}")
                     
                     # Send ack
                     ack = json.dumps({"type": "registered", "worker_id": worker_id}).encode()
@@ -200,27 +205,34 @@ class WorkerManager:
                 
             time.sleep(5)
 
-    def distribute_task_sync(self, frame_data_base64, frame_id, timeout=0.2):
+    def distribute_task_sync(self, frame_data_base64, frame_id, required_specialty: Optional[str] = None, timeout=0.2):
         """
         Sends task to a worker and WAITS for the result.
+        If required_specialty is provided, it only routes to workers with that specialty.
         Returns detections list if successful, None if timeout/failure.
         """
         if not self.workers:
             return None
 
-        # 1. Load Balance (Round-Robin)
-        worker_ids = list(self.workers.keys())
-        if not worker_ids: return None
+        # 1. Filter Workers by Capability
+        eligible_workers = []
+        for wid, info in self.workers.items():
+            if required_specialty is None or info.get("specialty") == required_specialty or info.get("specialty") == "Generalist":
+                eligible_workers.append(wid)
+
+        if not eligible_workers:
+            return None
         
-        self.current_worker_index = (self.current_worker_index + 1) % len(worker_ids)
-        target_wid = worker_ids[self.current_worker_index]
+        # 2. Load Balance (Round-Robin among eligible)
+        self.current_worker_index = (self.current_worker_index + 1) % len(eligible_workers)
+        target_wid = eligible_workers[self.current_worker_index]
         target_info = self.workers[target_wid]
 
-        # 2. Setup Wait Event
+        # 3. Setup Wait Event
         event = threading.Event()
         self.pending_tasks[frame_id] = {"event": event, "result": None}
 
-        # 3. Send Task
+        # 4. Send Task
         task = {
             "type": "inference_task",
             "frame_id": frame_id,
@@ -235,11 +247,10 @@ class WorkerManager:
             del self.pending_tasks[frame_id]
             return None
 
-        # 4. Wait for Result (High-Performance Blocking)
-        # We wait for the 'inference_result' message to set the event
+        # 5. Wait for Result (High-Performance Blocking)
         flag = event.wait(timeout)
         
-        # 5. Retrieve Result
+        # 6. Retrieve Result
         result = None
         if flag:
             result = self.pending_tasks[frame_id]["result"]
