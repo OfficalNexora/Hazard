@@ -121,13 +121,21 @@ class SensorWorker:
                 print(f"[SensorWorker] Raw: {line.strip()}")
     
     def _read_loop(self):
-        """Main read loop (runs in thread)"""
+        """Main read loop (runs in thread) with auto-reconnection"""
         buffer = ""
         last_ping = time.time()
         
         while self.running:
             try:
-                if self.serial and self.serial.in_waiting:
+                if not self.serial or not self.serial.is_open:
+                    print(f"[SensorWorker] Connection lost. Attempting to reconnect...")
+                    if self.connect():
+                        buffer = "" # Clear buffer on new connection
+                    else:
+                        time.sleep(5) # Cooldown before next attempt
+                        continue
+
+                if self.serial.in_waiting:
                     chunk = self.serial.read(self.serial.in_waiting).decode('utf-8', errors='ignore')
                     buffer += chunk
                     
@@ -143,8 +151,12 @@ class SensorWorker:
                 
                 time.sleep(0.01)  # Small delay to prevent CPU spinning
                 
+            except (serial.SerialException, OSError) as e:
+                print(f"[SensorWorker] Serial error: {e}")
+                self.disconnect()
+                time.sleep(2)
             except Exception as e:
-                print(f"[SensorWorker] Read error: {e}")
+                print(f"[SensorWorker] Unexpected error: {e}")
                 time.sleep(1)
     
     def start(self):

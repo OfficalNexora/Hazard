@@ -285,6 +285,14 @@ class WorkerApp:
             try:
                 self.log(f"Loading Specialized Engine: {self.model_path}")
                 self.model = YOLO(self.model_path)
+                
+                # Validate model classes
+                model_classes = self.model.names
+                if any(cls in model_classes.values() for cls in ["person", "car", "dog"]):
+                    self.log("WARNING: Default pre-trained model detected. Safeguard enabled.")
+                    self.safeguard_enabled = True
+                else:
+                    self.safeguard_enabled = False
             except Exception as e:
                 self.log(f"Engine failure: {e}")
                 self.running = False
@@ -418,7 +426,14 @@ class WorkerApp:
                     x1, y1, x2, y2 = box.xyxy[0].tolist()
                     conf = float(box.conf[0])
                     cls_id = int(box.cls[0])
-                    cls_name = self.class_names[cls_id] if cls_id < len(self.class_names) else "Hazard"
+                    
+                    if getattr(self, 'safeguard_enabled', False):
+                        # Use actual model name if safeguard is on
+                        cls_name = self.model.names[cls_id]
+                        # Don't send back if it's not a hazard model (to prevent false alerts on server)
+                        continue 
+                    else:
+                        cls_name = self.class_names[cls_id] if cls_id < len(self.class_names) else "Hazard"
                     
                     detections.append({
                         "class": cls_name,

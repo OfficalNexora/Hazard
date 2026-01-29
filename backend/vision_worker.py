@@ -55,6 +55,15 @@ class VisionWorker:
     def load_model(self):
         print(f"[VisionWorker] Loading model: {self.model_path}")
         self.model = YOLO(self.model_path)
+        
+        # Validate model classes
+        model_classes = self.model.names
+        if any(cls in model_classes.values() for cls in ["person", "car", "dog"]):
+            print("[VisionWorker] WARNING: Default pre-trained model detected (COCO).")
+            print("[VisionWorker] Hazard detection may be inaccurate. Alerts for people/objects will be suppressed.")
+            self.safeguard_enabled = True
+        else:
+            self.safeguard_enabled = False
 
     def add_camera(self, device_id: str, source: str):
         """Add a new camera source (Serial PORT or HTTP URL)"""
@@ -149,7 +158,15 @@ class VisionWorker:
                     x1, y1, x2, y2 = box.xyxy[0].tolist()
                     conf = float(box.conf[0])
                     cls_id = int(box.cls[0])
-                    cls_name = self.class_names[cls_id] if cls_id < len(self.class_names) else "Hazard"
+                    
+                    if getattr(self, 'safeguard_enabled', False):
+                        # Use actual model name instead of hazard mapping if safeguard is on
+                        cls_name = self.model.names[cls_id]
+                        # Don't add to global state/db if it's a generic COCO object to avoid false alert logic
+                        is_hazard = False
+                    else:
+                        cls_name = self.class_names[cls_id] if cls_id < len(self.class_names) else "Hazard"
+                        is_hazard = True
                     
                     detections_to_draw.append({
                         "class": cls_name,
@@ -157,8 +174,9 @@ class VisionWorker:
                         "bbox": [x1, y1, x2, y2]
                     })
                     
-                    # Add to state and DB
-                    state.add_detection(cls_name, conf, [x1, y1, x2, y2], frame_id)
+                    # Add to state and DB only if it's a confirmed hazard from a hazard model
+                    if is_hazard:
+                        state.add_detection(cls_name, conf, [x1, y1, x2, y2], frame_id)
 
         # Draw visualizations
         for det in detections_to_draw:

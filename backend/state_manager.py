@@ -276,9 +276,9 @@ class StateManager:
                 # Trim history
                 if len(self._alert_history) > self._max_alerts:
                     self._alert_history = self._alert_history[-self._max_alerts:]
-                
-                # PERSIST TO SQLITE
-                log_alert(state.name, reason)
+        
+        # PERSIST TO SQLITE (Outside Lock)
+        log_alert(state.name, reason)
         
         self._emit("alert_change", {
             "state": state.name,
