@@ -57,14 +57,82 @@ def build_server_exe():
         "--add-data", f"{BACKEND_DIR};backend",
         "--add-data", f"{FRONTEND_DIR}/out;frontend/out",
         "--add-data", f"{ROOT_DIR}/frontend_public/out;frontend_public/out",
-        "--hidden-import", "engineio.async_drivers.threading",
+        
+        # === CRITICAL: Collect all dependencies ===
+        "--collect-all", "fastapi",
+        "--collect-all", "uvicorn",
+        "--collect-all", "starlette",
+        "--collect-all", "pydantic",
+        "--collect-all", "anyio",
+        
+        # === FastAPI/Uvicorn core imports ===
+        "--hidden-import", "fastapi",
+        "--hidden-import", "fastapi.middleware",
+        "--hidden-import", "fastapi.middleware.cors",
+        "--hidden-import", "fastapi.staticfiles",
+        "--hidden-import", "fastapi.responses",
+        "--hidden-import", "uvicorn",
+        "--hidden-import", "uvicorn.main",
+        "--hidden-import", "uvicorn.config",
         "--hidden-import", "uvicorn.loops.auto",
         "--hidden-import", "uvicorn.protocols.http.auto",
+        "--hidden-import", "uvicorn.protocols.http.h11_impl",
+        "--hidden-import", "uvicorn.protocols.websockets.auto",
+        "--hidden-import", "uvicorn.protocols.websockets.websockets_impl",
         "--hidden-import", "uvicorn.lifespan.on",
+        "--hidden-import", "uvicorn.lifespan.off",
+        "--hidden-import", "uvicorn.logging",
+        
+        # === Starlette (FastAPI dependency) ===
+        "--hidden-import", "starlette",
+        "--hidden-import", "starlette.middleware",
+        "--hidden-import", "starlette.middleware.cors",
+        "--hidden-import", "starlette.routing",
+        "--hidden-import", "starlette.responses",
+        "--hidden-import", "starlette.staticfiles",
+        "--hidden-import", "starlette.websockets",
+        
+        # === AsyncIO/Networking ===
+        "--hidden-import", "anyio",
+        "--hidden-import", "anyio._backends._asyncio",
+        "--hidden-import", "h11",
+        "--hidden-import", "httptools",
+        "--hidden-import", "websockets",
+        "--hidden-import", "engineio.async_drivers.threading",
+        
+        # === Pydantic (data validation) ===
+        "--hidden-import", "pydantic",
+        "--hidden-import", "pydantic.fields",
+        "--hidden-import", "pydantic_core",
+        
+        # === Database/Serial ===
+        "--hidden-import", "sqlite3",
+        "--hidden-import", "serial",
+        "--hidden-import", "serial.tools.list_ports",
+        
+        # === Windows-specific ===
         "--hidden-import", "win32timezone",
+        
+        # === 3D Digital Twin modules ===
+        "--hidden-import", "backend.diorama_model",
+        "--hidden-import", "backend.camera_mapper",
+        "--hidden-import", "backend.pathfinder",
+        "--hidden-import", "backend.event_store",
+        "--hidden-import", "backend.state_manager",
+        "--hidden-import", "backend.sensor_worker",
+        "--hidden-import", "backend.vision_worker",
+        "--hidden-import", "backend.control_worker",
+        "--hidden-import", "backend.worker_manager",
+        "--hidden-import", "backend.database",
+        
+        # === NumPy for 3D math ===
+        "--hidden-import", "numpy",
+        
         "nexus_launcher.py"
     ]
     run_command(cmd)
+
+
 
 def build_worker_exe():
     # packaging the AI workers separately so I can distribute 

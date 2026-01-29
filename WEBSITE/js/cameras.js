@@ -1,38 +1,64 @@
-const cameras = [
-    {
-        id: 1,
-        name: 'CAM-01 (Gate)',
-        ip: '192.168.1.101',
-        status: 'online',
-        ai: true,
-        // I define the overlay configuration here to map physical hazards to the camera's viewport.
-        locationLabel: 'North Gate',
-        hazards: [
-            { type: 'PERSON', severity: 'critical', x: 20, y: 30, w: 15, h: 35 } // Percentage-based positioning for responsive scaling
-        ],
-        evacPoint: null
-    },
-    {
-        id: 2,
-        name: 'CAM-02 (Perimeter)',
-        ip: '192.168.1.102',
-        status: 'online',
-        ai: true,
-        locationLabel: 'West Perimeter',
-        hazards: [], // Safe
-        evacPoint: { label: 'Assembly Point B', x: 75, y: 60 } // Visible evacuation marker
-    },
-    {
-        id: 3,
-        name: 'CAM-03 (Hallway)',
-        ip: '192.168.1.103',
-        status: 'offline',
-        ai: false,
-        locationLabel: 'Main Hall',
-        hazards: [],
-        evacPoint: { label: 'Exit 2', x: 50, y: 80 }
+// I updated this to fetch live cameras from the backend instead of using placeholders.
+let cameras = [];
+
+/**
+ * I structured this to fetch the actual device list from the server.
+ * This ensures that when a new ESP32-CAM registers, it appears here automatically.
+ */
+async function fetchCameras() {
+    try {
+        const response = await fetch('/api/devices');
+        const data = await response.json();
+
+        // Transform the system devices into camera objects
+        cameras = data.devices
+            .filter(d => d.type === 'esp32_cam' || d.type === 'camera')
+            .map(d => ({
+                id: d.id,
+                name: d.name || d.id,
+                ip: d.ip,
+                status: d.online ? 'online' : 'offline',
+                ai: true, // Assuming AI is always active for these streams
+                locationLabel: d.location || 'Unknown Area',
+                hazards: [], // These will be populated by the status loop
+                evacPoint: null
+            }));
+
+        renderCameras();
+    } catch (e) {
+        console.error("Failed to fetch cameras:", e);
     }
-];
+}
+
+/**
+ * I added this sync loop to update hazard overlays in real-time.
+ * It polls the system status to see if the AI has detected anything.
+ */
+async function syncHazards() {
+    try {
+        const response = await fetch('/api/status');
+        const status = await response.json();
+
+        const detections = status.detections || [];
+
+        cameras.forEach(cam => {
+            // Filter detections for this specific camera
+            // In a multi-camera setup, 'device_id' in detection would match cam.id
+            cam.hazards = detections.map(det => ({
+                type: det.class.toUpperCase(),
+                severity: det.confidence > 0.8 ? 'critical' : 'warning',
+                x: det.bbox[0] / 6.4, // Map VGA 640 to %
+                y: det.bbox[1] / 4.8, // Map VGA 480 to %
+                w: (det.bbox[2] - det.bbox[0]) / 6.4,
+                h: (det.bbox[3] - det.bbox[1]) / 4.8
+            }));
+        });
+
+        renderCameras();
+    } catch (e) {
+        // Silently fail sync
+    }
+}
 
 /**
  * I structured this render loop to dynamically build the camera grid.
@@ -40,7 +66,13 @@ const cameras = [
  */
 function renderCameras() {
     const grid = document.getElementById('camera-grid');
+    if (!grid) return;
     grid.innerHTML = '';
+
+    if (cameras.length === 0) {
+        grid.innerHTML = '<div class="text-muted" style="grid-column: 1/-1; text-align: center; padding: 4rem;">Searching for active cameras...</div>';
+        return;
+    }
 
     cameras.forEach(cam => {
         const card = document.createElement('div');
@@ -49,7 +81,7 @@ function renderCameras() {
         // Building the overlay container
         let overlays = `<div class="camera-overlay-container">`;
 
-        // 1. Camera Location Badge - I ensured this overlay is always visible for context.
+        // 1. Camera Location Badge
         overlays += `
             <div class="overlay-cam-loc">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
@@ -57,63 +89,48 @@ function renderCameras() {
             </div>
         `;
 
-        // 2. Hazard Zones - I only render these if the camera is online to avoid ghost data.
+        // 2. Hazard Zones
         if (cam.status === 'online' && cam.hazards) {
             cam.hazards.forEach(h => {
                 overlays += `
-                    <div class="overlay-hazard-zone" style="left: ${h.x}%; top: ${h.y}%; width: ${h.w}%; height: ${h.h}%;">
-                        <div class="overlay-hazard-label">${h.type} (${h.severity})</div>
+                    <div class="overlay-hazard-zone ${h.severity}" style="left: ${h.x}%; top: ${h.y}%; width: ${h.w}%; height: ${h.h}%;">
+                        <div class="overlay-hazard-label">${h.type}</div>
                     </div>
                 `;
             });
         }
 
-        // 3. Evacuation Points - I layered this logic to assist in route planning.
-        if (cam.status === 'online' && cam.evacPoint) {
-            overlays += `
-                <div class="overlay-evac-point" style="left: ${cam.evacPoint.x}%; top: ${cam.evacPoint.y}%;">
-                    <div class="evac-marker-icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
-                    </div>
-                    <div class="evac-marker-label">${cam.evacPoint.label}</div>
-                </div>
-            `;
-        }
-
         overlays += `</div>`;
 
-        // I constructed the card HTML here, using my 'status-badge' component for uniformity.
+        // Video Stream URL (Proxied through backend to provide flip and AI processing)
+        const streamUrl = `/api/camera/${cam.id}/stream`;
+
         card.innerHTML = `
             <div class="card-header">
                 <div style="display: flex; align-items: center; gap: 0.5rem;">
                     <span>${cam.name}</span>
-                    ${cam.ai ? '<span class="status-badge" style="font-size:0.7em; padding: 2px 6px;">AI ACTIVE</span>' : ''}
+                    <span class="status-badge" style="font-size:0.7em; padding: 2px 6px; background: #222;">ID: ${cam.id}</span>
                 </div>
                 <span class="status-badge ${cam.status}">
                     <span style="width:8px; height:8px; background: currentColor; border-radius:50%;"></span>
                     ${cam.status.toUpperCase()}
                 </span>
             </div>
-            <div class="camera-view" style="aspect-ratio: 16/9; background: #000; position: relative;">
+            <div class="camera-view" style="aspect-ratio: 16/9; background: #000; position: relative; overflow: hidden;">
                 ${cam.status === 'online' ?
-                `<!-- I use a placeholder here for the MJPEG stream, but the overlay logic handles the real data -->
-                     <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #333;">
-                        [ VIDEO STREAM ]
-                     </div>
-                     ${overlays}
-                    `
+                `<img src="${streamUrl}" style="width: 100%; height: 100%; object-fit: contain;" onerror="this.src='/img/no-signal.png'"/>
+                 ${overlays}`
                 :
-                `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color: var(--accent-cricital);">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><desc>Download more icon styles at https://icons8.com</desc><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color: var(--accent-critical);">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
                         <span style="margin-top: 1rem;">SIGNAL LOST</span>
                      </div>`
             }
-                ${cam.status === 'online' ? '<div class="live-badge" style="z-index: 20;">LIVE</div>' : ''}
             </div>
             <div class="card-body" style="padding: 0.5rem 1rem; border-top: 1px solid var(--border-color);">
                 <div class="flex-between">
-                    <span class="text-muted text-sm">Target: ${cam.locationLabel}</span>
-                    <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;" onclick="expandCamera(${cam.id})">Expand</button>
+                    <span class="text-muted text-sm">${cam.ip}</span>
+                    <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;" onclick="location.href='ai.html'">AI View</button>
                 </div>
             </div>
         `;
@@ -121,24 +138,16 @@ function renderCameras() {
     });
 }
 
-/**
- * simple expand handler.
- */
-function expandCamera(id) {
-    alert(`Expand request for Camera ${id}`);
-}
-
-/**
- * I implemented this to simulate a stream refresh without a full page reload.
- */
 function refreshStreams() {
-    const grid = document.getElementById('camera-grid');
-    grid.style.opacity = '0.5';
-    setTimeout(() => {
-        grid.style.opacity = '1';
-        renderCameras(); // I trigger a re-render to update the state.
-    }, 500);
+    fetchCameras();
 }
 
-// I kick off the render process once the DOM is ready.
-document.addEventListener('DOMContentLoaded', renderCameras);
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
+    fetchCameras();
+    // Refresh list every 10 seconds
+    setInterval(fetchCameras, 10000);
+    // Sync hazards every 1 second
+    setInterval(syncHazards, 1000);
+});
+

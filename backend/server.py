@@ -197,6 +197,8 @@ class ClassificationRequest(BaseModel):
 class CameraRequest(BaseModel):
     device_id: str
     ip: str
+    vflip: bool = False  # Flip vertically (for upside-down cameras)
+    hflip: bool = False  # Flip horizontally (mirror)
 
 class AlertRequest(BaseModel):
     alert: int
@@ -237,9 +239,9 @@ app.add_middleware(
 # API ENDPOINTS
 # ============================================================================
 
-@app.get("/")
-async def root():
-    """Redirect to dashboard"""
+@app.get("/api")
+async def api_root():
+    """API Info"""
     return {"message": "MOD-EVAC-MS Backend API", "docs": "/docs"}
 
 
@@ -428,10 +430,163 @@ async def register_camera(req: CameraRequest):
     vision = get_vision_worker()
     if vision:
         source = f"http://{req.ip}:81/stream"
-        vision.add_camera(req.device_id, source)
+        vision.add_camera(req.device_id, source, vflip=req.vflip, hflip=req.hflip)
         state.update_device(req.device_id, "esp32_cam", True, req.ip)
-        return {"status": "success", "device_id": req.device_id}
+        return {"status": "success", "device_id": req.device_id, "vflip": req.vflip}
     raise HTTPException(status_code=503, detail="Vision worker not available")
+
+
+# ============================================================================
+# 3D DIGITAL TWIN API ENDPOINTS
+# ============================================================================
+
+@app.get("/api/diorama/model")
+async def get_diorama_model():
+    """Get the 3D diorama model configuration."""
+    try:
+        from diorama_model import get_model
+        model = get_model()
+        return model.to_dict()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/diorama/model")
+async def update_diorama_model(config: dict):
+    """Update the diorama model configuration."""
+    try:
+        from diorama_model import load_model_from_json
+        import json
+        import tempfile
+        
+        # Write to temp file and reload
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config, f)
+            temp_path = f.name
+        
+        load_model_from_json(temp_path)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/events")
+async def get_events(
+    start: Optional[float] = None,
+    end: Optional[float] = None,
+    event_type: Optional[str] = None,
+    limit: int = 100
+):
+    """Get hazard events by time range."""
+    try:
+        from event_store import get_event_store
+        store = get_event_store()
+        events = store.get_events(start, end, event_type, limit)
+        return {"events": [e.to_dict() for e in events]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/events/active")
+async def get_active_hazards(window: float = 30.0):
+    """Get currently active hazards (detected within time window)."""
+    try:
+        from event_store import get_event_store
+        store = get_event_store()
+        events = store.get_active_hazards(window)
+        return {"hazards": [e.to_dict() for e in events]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/events/timeline")
+async def get_events_timeline(
+    start: float,
+    end: float,
+    bucket_seconds: float = 60.0
+):
+    """Get event summary grouped by time buckets for timeline visualization."""
+    try:
+        from event_store import get_event_store
+        store = get_event_store()
+        timeline = store.get_timeline_summary(start, end, bucket_seconds)
+        return {"timeline": timeline}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/pathfinding/route")
+async def get_evacuation_route(
+    start_zone: int,
+    hazard_type: str = "fire"
+):
+    """Calculate evacuation route from a zone avoiding hazards."""
+    try:
+        from pathfinder import get_pathfinder
+        from event_store import get_event_store
+        
+        # Get active hazard zones
+        store = get_event_store()
+        active = store.get_active_hazards(30.0)
+        hazard_zones = list(set(e.zone_id for e in active if e.zone_id is not None))
+        
+        # Calculate path
+        pathfinder = get_pathfinder()
+        result = pathfinder.find_path_to_exit(start_zone, hazard_zones, hazard_type)
+        
+        return {
+            "path": result.path,
+            "cost": result.cost,
+            "destination": result.destination,
+            "valid": result.valid,
+            "hazard_zones": hazard_zones
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/pathfinding/led_commands")
+async def get_led_commands(hazard_type: str = "fire"):
+    """Get LED commands for current hazard state."""
+    try:
+        from pathfinder import get_pathfinder
+        from event_store import get_event_store
+        
+        # Get active hazard zones
+        store = get_event_store()
+        active = store.get_active_hazards(30.0)
+        hazard_zones = list(set(e.zone_id for e in active if e.zone_id is not None))
+        
+        # Generate LED commands
+        pathfinder = get_pathfinder()
+        commands = pathfinder.get_led_commands(hazard_zones, hazard_type)
+        
+        return commands
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/camera/calibrate")
+async def calibrate_camera(points: List[dict]):
+    """
+    Set camera calibration points.
+    
+    Each point: {"pixel_x": int, "pixel_y": int, "world_x": float, "world_y": float, "world_z": float}
+    """
+    try:
+        from camera_mapper import get_mapper
+        
+        calibration = [
+            (p["pixel_x"], p["pixel_y"], p["world_x"], p["world_y"], p["world_z"])
+            for p in points
+        ]
+        
+        mapper = get_mapper()
+        mapper.calibrate(calibration)
+        
+        return {"status": "success", "points": len(calibration)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # ============================================================================
@@ -487,13 +642,22 @@ async def websocket_telemetry(websocket: WebSocket):
 FRONTEND_PATH = os.path.join(os.path.dirname(__file__), "..", "frontend", "out")
 PUBLIC_PORTAL_PATH = os.path.join(os.path.dirname(__file__), "..", "frontend_public", "out")
 
+print(f"[SERVER] Front Path: {os.path.abspath(FRONTEND_PATH)} | Exists: {os.path.exists(FRONTEND_PATH)}")
+print(f"[SERVER] Public Path: {os.path.abspath(PUBLIC_PORTAL_PATH)} | Exists: {os.path.exists(PUBLIC_PORTAL_PATH)}")
+
+# Serve Public Portal at /public (Longer prefix first)
+if os.path.exists(PUBLIC_PORTAL_PATH):
+    print(f"[SERVER] Mounting Public Portal from: {PUBLIC_PORTAL_PATH}")
+    app.mount("/public", StaticFiles(directory=PUBLIC_PORTAL_PATH, html=True), name="public")
+else:
+    print(f"[SERVER] WARNING: Public Portal directory missing: {PUBLIC_PORTAL_PATH}")
+
+# Serve Admin Dashboard at / (Catch-all)
 if os.path.exists(FRONTEND_PATH):
-    # Serve Public Portal at /public
-    if os.path.exists(PUBLIC_PORTAL_PATH):
-        app.mount("/public", StaticFiles(directory=PUBLIC_PORTAL_PATH, html=True), name="public")
-    
-    # Serve Admin Dashboard at /
+    print(f"[SERVER] Mounting Admin Dashboard from: {FRONTEND_PATH}")
     app.mount("/", StaticFiles(directory=FRONTEND_PATH, html=True), name="admin")
+else:
+    print(f"[SERVER] WARNING: Admin Dashboard directory missing: {FRONTEND_PATH}")
 
 
 # ============================================================================

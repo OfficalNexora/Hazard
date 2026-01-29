@@ -29,7 +29,7 @@ export function Sidebar() {
     // The active state logic here ensures the operator always knows their context within the application application.
     return (
         <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r bg-card/50 backdrop-blur-xl">
-            <div className="flex h-16 items-center border-b px-6">
+            <div className="flex h-14 items-center border-b px-6">
                 <Activity className="mr-2 h-6 w-6 text-primary animate-pulse" />
                 <span className="text-lg font-bold tracking-wider text-foreground">
                     NEXORA <span className="text-primary">OPS</span>

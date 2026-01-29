@@ -13,7 +13,7 @@ import argparse
 import cv2
 import numpy as np
 from typing import Optional, Callable
-from ultralytics import YOLO
+# from ultralytics import YOLO  <-- Moved to load_model for lazy loading
 import zmq
 
 from state_manager import state
@@ -50,18 +50,33 @@ class VisionWorker:
             "Landslide", "Explosion", "Collapsed Structure", "Industrial Accident"
         ]
         
-        self.load_model()
+        # self.load_model() <-- Run in background to prevent blocking startup
+        threading.Thread(target=self.load_model, daemon=True).start()
 
     def load_model(self):
-        print(f"[VisionWorker] Loading model: {self.model_path}")
-        self.model = YOLO(self.model_path)
+        print(f"[VisionWorker] Loading AI Model ({self.model_path})... (This may take 10-20s)")
+        try:
+            from ultralytics import YOLO
+            self.model = YOLO(self.model_path)
+            print("[VisionWorker] Model Loaded Successfully!")
+        except Exception as e:
+            print(f"[VisionWorker] FAILED to load model: {e}")
 
-    def add_camera(self, device_id: str, source: str):
-        """Add a new camera source (Serial PORT or HTTP URL)"""
-        print(f"[VisionWorker] Adding camera {device_id} at {source}")
+    def add_camera(self, device_id: str, source: str, vflip: bool = False, hflip: bool = False):
+        """Add a new camera source (Serial PORT or HTTP URL)
+        
+        Args:
+            device_id: Unique camera identifier
+            source: Serial port (COM3) or HTTP stream URL
+            vflip: Flip video vertically (for upside-down cameras)
+            hflip: Flip video horizontally (mirror)
+        """
+        print(f"[VisionWorker] Adding camera {device_id} at {source} (vflip={vflip})")
         self.streams[device_id] = {
             "source": source,
-            "active": True
+            "active": True,
+            "vflip": vflip,
+            "hflip": hflip
         }
         thread = threading.Thread(target=self._camera_loop, args=(device_id,), daemon=True)
         self.threads.append(thread)
@@ -94,6 +109,13 @@ class VisionWorker:
                     time.sleep(2)
                     cap.open(source)
                     continue
+                
+                # Apply camera transforms if configured
+                stream_config = self.streams[device_id]
+                if stream_config.get("vflip", False):
+                    frame = cv2.flip(frame, 0)  # Vertical flip
+                if stream_config.get("hflip", False):
+                    frame = cv2.flip(frame, 1)  # Horizontal flip
 
             frame_count += 1
             processed_frame = self._process_frame(device_id, frame, frame_count)
@@ -140,6 +162,11 @@ class VisionWorker:
             
         else:
             # LOCAL FALLBACK: Run local YOLO
+            if self.model is None:
+                # Model still loading
+                cv2.putText(frame, "INITIALIZING AI...", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
+                return frame
+
             # Either we chose to run locally, or the worker timed out
             results = self.model(frame, verbose=False, conf=0.4)
             self.inference_count += 1
@@ -159,6 +186,26 @@ class VisionWorker:
                     
                     # Add to state and DB
                     state.add_detection(cls_name, conf, [x1, y1, x2, y2], frame_id)
+                    
+                    # Log to event store for 3D replay
+                    try:
+                        from camera_mapper import get_mapper
+                        from event_store import get_event_store
+                        
+                        mapper = get_mapper()
+                        detection_result = mapper.map_detection(cls_name, conf, (int(x1), int(y1), int(x2), int(y2)))
+                        
+                        event_store = get_event_store()
+                        event_store.log_event(
+                            event_type=cls_name.lower(),
+                            position=detection_result.world_position,
+                            zone_id=detection_result.zone_id,
+                            zone_name=detection_result.zone_name,
+                            confidence=conf,
+                            metadata={"frame_id": frame_id, "device_id": device_id, "bbox": [x1, y1, x2, y2]}
+                        )
+                    except Exception as e:
+                        pass  # Silent fail for event logging
 
         # Draw visualizations
         for det in detections_to_draw:

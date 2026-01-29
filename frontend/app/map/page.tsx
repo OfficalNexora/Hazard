@@ -15,7 +15,7 @@ const LiveMap = dynamic(() => import("@/components/map/LiveMap"), {
 
 export default function MapPage() {
     return (
-        <div className="flex h-[calc(100vh-8rem)] flex-col space-y-4">
+        <div className="flex h-[calc(100vh-140px)] min-h-[500px] flex-col space-y-4">
             <div className="flex items-center justify-between">
                 <h1 className="text-3xl font-bold tracking-tight text-foreground">Live Telemetry</h1>
                 <div className="flex items-center gap-2">

@@ -42,7 +42,7 @@ export function Header() {
     };
 
     return (
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background/95 px-6 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b bg-background/95 px-6 backdrop-blur supports-[backdrop-filter]:bg-background/60">
             <div className="flex flex-1 items-center gap-4">
                 <div className="relative w-96">
                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />

@@ -26,6 +26,176 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
+def _enable_kill_on_exit():
+    """Windows Only: Ensure subprocesses die when the main process dies."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+        job = ctypes.windll.kernel32.CreateJobObjectW(None, None)
+        
+        # JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+        class IO_COUNTERS(ctypes.Structure):
+            _fields_ = [('ReadOperationCount', ctypes.c_ulonglong), ('WriteOperationCount', ctypes.c_ulonglong), 
+                       ('OtherOperationCount', ctypes.c_ulonglong), ('ReadTransferCount', ctypes.c_ulonglong), 
+                       ('WriteTransferCount', ctypes.c_ulonglong), ('OtherTransferCount', ctypes.c_ulonglong)]
+        class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+            _fields_ = [('PerProcessUserTimeLimit', ctypes.c_longlong), ('PerJobUserTimeLimit', ctypes.c_longlong), 
+                       ('LimitFlags', ctypes.c_ulong), ('MinimumWorkingSetSize', ctypes.c_size_t), 
+                       ('MaximumWorkingSetSize', ctypes.c_size_t), ('ActiveProcessLimit', ctypes.c_ulong), 
+                       ('Affinity', ctypes.c_size_t), ('PriorityClass', ctypes.c_ulong), 
+                       ('SchedulingClass', ctypes.c_ulong)]
+        class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+            _fields_ = [('BasicLimitInformation', JOBOBJECT_BASIC_LIMIT_INFORMATION), ('IoInfo', IO_COUNTERS), 
+                       ('ProcessMemoryLimit', ctypes.c_size_t), ('JobMemoryLimit', ctypes.c_size_t), 
+                       ('PeakProcessMemoryUsed', ctypes.c_size_t), ('PeakJobMemoryUsed', ctypes.c_size_t)]
+        
+        # 0x2000 = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        job_info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+        job_info.BasicLimitInformation.LimitFlags = 0x2000
+        
+        ctypes.windll.kernel32.SetInformationJobObject(
+            job, 9, ctypes.byref(job_info), ctypes.sizeof(job_info)
+        )
+        ctypes.windll.kernel32.AssignProcessToJobObject(job, ctypes.windll.kernel32.GetCurrentProcess())
+        return job # Keep reference alive
+    except Exception as e:
+        print(f"Failed to enable job object: {e}")
+        return None
+
+def ensure_firewall_rule(log_callback=print):
+    """
+    Ensure Windows Firewall allows port 8000.
+    Creates rule if it doesn't exist. Requires admin for first-time setup.
+    """
+    RULE_NAME = "MOD-EVAC-MS Backend"
+    PORT = 8000
+    
+    # Check if rule already exists
+    try:
+        result = subprocess.run(
+            ["netsh", "advfirewall", "firewall", "show", "rule", f"name={RULE_NAME}"],
+            capture_output=True, text=True, timeout=10
+        )
+        if RULE_NAME in result.stdout:
+            log_callback(f"[Firewall] Rule '{RULE_NAME}' already exists")
+            return True
+    except Exception as e:
+        log_callback(f"[Firewall] Check failed: {e}")
+    
+    # Try to create rule (needs admin)
+    try:
+        result = subprocess.run(
+            [
+                "netsh", "advfirewall", "firewall", "add", "rule",
+                f"name={RULE_NAME}",
+                "dir=in",
+                "action=allow",
+                "protocol=tcp",
+                f"localport={PORT}"
+            ],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0:
+            log_callback(f"[Firewall] Successfully added rule for port {PORT}")
+            return True
+        else:
+            # Needs elevation - request UAC
+            log_callback("[Firewall] Needs admin privileges, requesting elevation...")
+            return _request_admin_firewall(RULE_NAME, PORT, log_callback)
+    except Exception as e:
+        log_callback(f"[Firewall] Failed to add rule: {e}")
+        return False
+
+
+def _request_admin_firewall(rule_name, port, log_callback=print):
+    """Request UAC elevation to add firewall rule and wait for completion."""
+    import ctypes
+    import ctypes.wintypes
+    
+    # Marker file to confirm completion
+    marker_path = os.path.join(os.environ.get('TEMP', '.'), 'modevac_firewall_done.txt')
+    if os.path.exists(marker_path):
+        os.remove(marker_path)
+    
+    # Create a temporary batch script that creates a marker when done
+    script_content = f'''@echo off
+netsh advfirewall firewall add rule name="{rule_name}" dir=in action=allow protocol=tcp localport={port}
+if %errorlevel% equ 0 (
+    echo SUCCESS > "{marker_path}"
+    echo Firewall rule added successfully!
+) else (
+    echo FAILED > "{marker_path}"
+    echo Failed to add firewall rule.
+)
+timeout /t 2 >nul
+'''
+    
+    script_path = os.path.join(os.environ.get('TEMP', '.'), 'modevac_firewall.bat')
+    try:
+        with open(script_path, 'w') as f:
+            f.write(script_content)
+        
+        # Use ShellExecuteEx to run and wait
+        # SEE_MASK_NOCLOSEPROCESS = 0x00000040
+        class SHELLEXECUTEINFO(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", ctypes.wintypes.DWORD),
+                ("fMask", ctypes.c_ulong),
+                ("hwnd", ctypes.wintypes.HANDLE),
+                ("lpVerb", ctypes.c_wchar_p),
+                ("lpFile", ctypes.c_wchar_p),
+                ("lpParameters", ctypes.c_wchar_p),
+                ("lpDirectory", ctypes.c_wchar_p),
+                ("nShow", ctypes.c_int),
+                ("hInstApp", ctypes.wintypes.HINSTANCE),
+                ("lpIDList", ctypes.c_void_p),
+                ("lpClass", ctypes.c_wchar_p),
+                ("hkeyClass", ctypes.wintypes.HKEY),
+                ("dwHotKey", ctypes.wintypes.DWORD),
+                ("hIconOrMonitor", ctypes.wintypes.HANDLE),
+                ("hProcess", ctypes.wintypes.HANDLE),
+            ]
+        
+        sei = SHELLEXECUTEINFO()
+        sei.cbSize = ctypes.sizeof(sei)
+        sei.fMask = 0x00000040  # SEE_MASK_NOCLOSEPROCESS
+        sei.hwnd = None
+        sei.lpVerb = "runas"
+        sei.lpFile = script_path
+        sei.lpParameters = None
+        sei.lpDirectory = None
+        sei.nShow = 1  # SW_SHOWNORMAL
+        sei.hInstApp = None
+        sei.hProcess = None
+        
+        if ctypes.windll.shell32.ShellExecuteExW(ctypes.byref(sei)):
+            log_callback("[Firewall] Waiting for User Confirmation...")
+            # Wait for the process to complete (max 30 seconds)
+            if sei.hProcess:
+                ctypes.windll.kernel32.WaitForSingleObject(sei.hProcess, 30000)
+                ctypes.windll.kernel32.CloseHandle(sei.hProcess)
+            
+            # Check marker file
+            time.sleep(0.5)
+            if os.path.exists(marker_path):
+                with open(marker_path, 'r') as f:
+                    result = f.read().strip()
+                os.remove(marker_path)
+                if result == "SUCCESS":
+                    print(f"[Firewall] Successfully added rule for port {port}")
+                    return True
+        
+        print("[Firewall] UAC was cancelled or failed")
+        return False
+        
+    except Exception as e:
+        print(f"[Firewall] UAC request failed: {e}")
+        return False
+
+
+
 class QueueHandler(logging.Handler):
     """Custom logging handler to send logs to a queue for GUI display"""
     def __init__(self, log_queue):
@@ -41,7 +211,7 @@ class NexoraLauncher(ctk.CTk):
         super().__init__()
 
         self.title("NEXORA OPS | Command Center Launcher")
-        self.geometry("900x650")
+        self.geometry("900x550")
         
         # Application State
         self.server_process = None
@@ -56,16 +226,69 @@ class NexoraLauncher(ctk.CTk):
         
         # Start log consumer
         self._consume_logs()
+        
+        # Shutdown Hooks
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+        import atexit
+        atexit.register(self.cleanup)
+        
+        # Windows Job Object (Auto-Kill Children)
+        _enable_kill_on_exit()
+
+    def cleanup(self):
+        """Force cleanup of child processes."""
+        self.is_running = False
+        if self.server_process:
+            try:
+                self.server_process.terminate()
+                # Give it a moment to die cleanly
+                self.server_process.wait(timeout=1)
+            except:
+                try: 
+                   self.server_process.kill()
+                except:
+                   pass
+            self.server_process = None
+
+    def on_closing(self):
+        """Handle window close event."""
+        self.cleanup()
+        self.quit()
+        self.destroy()
 
     def _get_local_ip(self):
+        """Get local IP address with multiple fallback methods."""
+        # Method 1: UDP socket trick (most reliable)
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.settimeout(2)
             s.connect(("8.8.8.8", 80))
             ip = s.getsockname()[0]
             s.close()
-            return ip
-        except:
+            if ip and ip != "0.0.0.0":
+                return ip
+        except Exception:
+            pass
+        
+        # Method 2: Get all network interfaces
+        try:
+            hostname = socket.gethostname()
+            addresses = socket.getaddrinfo(hostname, None, socket.AF_INET)
+            for addr in addresses:
+                ip = addr[4][0]
+                if ip and not ip.startswith("127."):
+                    return ip
+        except Exception:
+            pass
+        
+        # Method 3: Hostname resolution
+        try:
             return socket.gethostbyname(socket.gethostname())
+        except Exception:
+            pass
+        
+        return "127.0.0.1"
+
 
     def _setup_ui(self):
         self.grid_columnconfigure(1, weight=1)
@@ -74,17 +297,17 @@ class NexoraLauncher(ctk.CTk):
         # SIDEPANEL
         self.sidebar = ctk.CTkFrame(self, width=220, corner_radius=0)
         self.sidebar.grid(row=0, column=0, rowspan=4, sticky="nsew")
-        self.sidebar.grid_rowconfigure(5, weight=1)
+        self.sidebar.grid_rowconfigure(7, weight=1)  # Push empty space to bottom
 
         logo_label = ctk.CTkLabel(self.sidebar, text="NEXORA", font=ctk.CTkFont(size=24, weight="bold", family="Orbitron"))
-        logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
+        logo_label.grid(row=0, column=0, padx=20, pady=(20, 5))
         
         subtitle = ctk.CTkLabel(self.sidebar, text="MOD-EVAC SYSTEM v1.0", font=ctk.CTkFont(size=11, family="Consolas"))
-        subtitle.grid(row=1, column=0, padx=20, pady=(0, 30))
+        subtitle.grid(row=1, column=0, padx=20, pady=(0, 20))
 
         # STATUS INDICATOR
         self.status_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        self.status_frame.grid(row=2, column=0, padx=20, pady=10)
+        self.status_frame.grid(row=2, column=0, padx=20, pady=5)
         
         self.status_dot = ctk.CTkLabel(self.status_frame, text="●", text_color="#ef4444", font=ctk.CTkFont(size=18))
         self.status_dot.pack(side="left", padx=5)
@@ -95,20 +318,21 @@ class NexoraLauncher(ctk.CTk):
         # MAIN CONTROL BUTTON
         self.control_btn = ctk.CTkButton(self.sidebar, text="START COMMAND", height=40, font=ctk.CTkFont(weight="bold"),
                                         command=self.toggle_server, fg_color="#3b82f6", hover_color="#2563eb")
-        self.control_btn.grid(row=3, column=0, padx=20, pady=20)
+        self.control_btn.grid(row=3, column=0, padx=20, pady=(15, 20))
 
         # QUICK LINKS SECTION
-        ctk.CTkLabel(self.sidebar, text="STATION LINKS", font=ctk.CTkFont(size=10, weight="bold"), text_color="#64748b").grid(row=4, column=0, padx=20, pady=(20, 0), sticky="w")
+        ctk.CTkLabel(self.sidebar, text="STATION LINKS", font=ctk.CTkFont(size=10, weight="bold"), text_color="#64748b").grid(row=4, column=0, padx=20, pady=(10, 5), sticky="w")
         
         self.admin_btn = ctk.CTkButton(self.sidebar, text="ADMIN DASHBOARD", height=32, state="disabled", 
                                        command=lambda: webbrowser.open("http://localhost:8000"),
                                        fg_color="#1e293b", hover_color="#334155")
-        self.admin_btn.grid(row=5, column=0, padx=20, pady=5)
+        self.admin_btn.grid(row=5, column=0, padx=20, pady=(0, 5), sticky="ew")
         
         self.public_btn = ctk.CTkButton(self.sidebar, text="PUBLIC PORTAL", height=32, state="disabled",
-                                        command=lambda: webbrowser.open(f"http://{self.local_ip}:8000/public"),
+                                        command=lambda: webbrowser.open("http://localhost:8000/public"),
                                         fg_color="#1e293b", hover_color="#334155")
-        self.public_btn.grid(row=6, column=0, padx=20, pady=5)
+        self.public_btn.grid(row=6, column=0, padx=20, pady=(0, 10), sticky="ew")
+
 
         # MAIN CONTENT
         self.main = ctk.CTkFrame(self, fg_color="transparent")
@@ -147,17 +371,29 @@ class NexoraLauncher(ctk.CTk):
         self.log_area.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="nsew")
 
     def log(self, text):
+        """Thread-safe logging: pushes message to queue."""
+        self.log_queue.put(f"SYS:{text}")
+    
+    def _update_log_ui(self, text):
+        """Actual UI update (MUST be called from main thread only)."""
         ts = time.strftime("[%H:%M:%S]")
         self.log_area.insert("end", f"{ts} {text}\n")
         self.log_area.see("end")
     
     def _consume_logs(self):
-        """Poll the queue for new log messages."""
+        """Poll the queue for new log messages and update UI on main thread."""
         try:
             while True:
                 msg = self.log_queue.get_nowait()
+                
+                # System messages (explicitly logged)
+                if msg.startswith("SYS:"):
+                    self._update_log_ui(msg[4:])
+                    continue
+                
+                # Server logs (filtered)
                 if "GET /" in msg or "WebSocket" in msg or "Uvicorn running" in msg:
-                    self.log(msg.strip())
+                    self._update_log_ui(msg.strip())
                 
                 if "Uvicorn running" in msg:
                     self._on_server_ready()
@@ -178,7 +414,7 @@ class NexoraLauncher(ctk.CTk):
         self.status_dot.configure(text_color="#f59e0b")
         self.status_text.configure(text="INITIALIZING...")
         
-        # Start server thread
+        # Start server thread (Firewall check happens inside)
         self.server_thread = threading.Thread(target=self._run_server, daemon=True)
         self.server_thread.start()
         
@@ -196,7 +432,16 @@ class NexoraLauncher(ctk.CTk):
             self.log("Stopping in-process server (App restart required to fully kill backend threads)")
         else:
             if self.server_process:
-                self.server_process.terminate()
+                self.log("Terminating server process...")
+                try:
+                    self.server_process.terminate()
+                    self.server_process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    self.log("Server unresponsive, forcing kill...")
+                    self.server_process.kill()
+                except Exception as e:
+                    self.log(f"Error stopping server: {e}")
+                
                 self.server_process = None
         
         self.is_running = False
@@ -210,6 +455,10 @@ class NexoraLauncher(ctk.CTk):
         self.log("NEXORA STATION SHUTDOWN COMPLETE.")
 
     def _run_server(self):
+        # 0. Check Firewall (in background thread)
+        self.log("Checking firewall configuration...")
+        ensure_firewall_rule(self.log)
+
         if getattr(sys, 'frozen', False):
              # FROZEN MODE: Run In-Process
              try:
@@ -244,26 +493,40 @@ class NexoraLauncher(ctk.CTk):
                  self.log(traceback.format_exc())
         else:
             # DEV MODE: Run Subprocess
-            cwd = resource_path("backend")
-            python_exe = sys.executable
-            
-            cmd = [python_exe, "-m", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
-            
-            self.server_process = subprocess.Popen(
-                cmd, 
-                cwd=cwd, 
-                stdout=subprocess.PIPE, 
-                stderr=subprocess.STDOUT, 
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                bufsize=1
-            )
+            try:
+                cwd = resource_path("backend")
+                python_exe = sys.executable
+                
+                self.log(f"Starting server from: {cwd}")
+                
+                # Verify backend exists
+                if not os.path.exists(cwd):
+                     self.log(f"ERROR: Backend directory not found at {cwd}")
+                     return
 
-            for line in iter(self.server_process.stdout.readline, ""):
-                if not self.is_running: break
-                # Push to queue for consistency
-                self.log_queue.put(line)
+                cmd = [python_exe, "-u", "-m", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
+                
+                self.server_process = subprocess.Popen(
+                    cmd, 
+                    cwd=cwd, 
+                    stdout=subprocess.PIPE, 
+                    stderr=subprocess.STDOUT, 
+                    text=True,
+                    encoding="utf-8", 
+                    errors="replace",
+                    bufsize=1  # Line buffered
+                )
+
+                self.log("Server process started...")
+                
+                for line in iter(self.server_process.stdout.readline, ""):
+                    if not self.is_running: break
+                    # Push to queue for consistency
+                    self.log_queue.put(line)
+            except Exception as e:
+                self.log(f"CRITICAL LAUNCH ERROR: {e}")
+                import traceback
+                self.log(traceback.format_exc())
 
     def _on_server_ready(self):
         self.status_dot.configure(text_color="#10b981")

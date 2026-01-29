@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Activity, Droplets, RotateCcw, AlertTriangle, Wifi, WifiOff, Phone, Bell } from "lucide-react";
+import { Activity, Droplets, RotateCcw, AlertTriangle, Wifi, WifiOff, Phone, Bell, Box } from "lucide-react";
 import { useSensorData, useAlertState, useDetections, useDevices } from "@/lib/hooks";
 
 // Alert state colors and labels
@@ -47,11 +48,20 @@ export default function Dashboard() {
   const activeCamera = devices.find(d => d.connected && (d.device_type === 'esp32_cam' || d.device_id.includes('cam')));
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Mission Control</h1>
+        <h1 className="text-xl font-bold tracking-tight text-foreground">Mission Control</h1>
         <div className="flex items-center gap-4">
+          {/* 3D Digital Twin Link */}
+          <Link
+            href="/diorama"
+            className="flex items-center gap-2 px-3 py-1 rounded-lg bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500/20 transition-colors"
+          >
+            <Box className="h-4 w-4 text-cyan-500" />
+            <span className="text-sm font-medium text-cyan-500">3D Twin</span>
+          </Link>
+
           {/* Connection Status */}
           <div className="flex items-center gap-2">
             {connected ? (
@@ -82,33 +92,33 @@ export default function Dashboard() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {/* Raining Monitor (formerly Water Level) */}
         <Card className="border-blue-500/20 bg-blue-500/5">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-bold text-blue-500">RAINING MONITOR</CardTitle>
-            <Droplets className={`h-4 w-4 ${(sensorData?.raining ?? 0) > 70 ? 'text-red-500' :
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3 px-4">
+            <CardTitle className="text-[10px] font-black text-blue-500 uppercase tracking-widest">RAINING MONITOR</CardTitle>
+            <Droplets className={`h-3.5 w-3.5 ${(sensorData?.raining ?? 0) > 70 ? 'text-red-500' :
               (sensorData?.raining ?? 0) > 40 ? 'text-amber-500' : 'text-blue-500'
               }`} />
           </CardHeader>
-          <CardContent>
-            <div className={`text-3xl font-bold ${(sensorData?.raining ?? 0) > 70 ? 'text-red-500' :
+          <CardContent className="px-4 pb-3">
+            <div className={`text-xl font-black ${(sensorData?.raining ?? 0) > 70 ? 'text-red-500' :
               (sensorData?.raining ?? 0) > 40 ? 'text-amber-500' : 'text-blue-500'
               }`}>
               {sensorData?.raining?.toFixed(1) ?? '0.0'}%
             </div>
-            <p className="text-[10px] text-blue-500/70 mt-1 uppercase tracking-wider font-mono">Precipitation intensity</p>
+            <p className="text-[9px] text-blue-500/70 mt-0.5 uppercase tracking-tighter font-mono">Precipitation intensity</p>
           </CardContent>
         </Card>
 
         {/* Fire Monitor (New) */}
         <Card className={`border-2 ${sensorData?.fire ? 'border-red-600 bg-red-600/20 animate-pulse' : 'border-emerald-500/20 bg-emerald-500/5'}`}>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className={`text-sm font-bold ${sensorData?.fire ? 'text-red-500' : 'text-emerald-500'}`}>FIRE MONITOR</CardTitle>
-            <AlertTriangle className={`h-4 w-4 ${sensorData?.fire ? 'text-red-500' : 'text-emerald-500'}`} />
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3 px-4">
+            <CardTitle className={`text-[10px] font-black ${sensorData?.fire ? 'text-red-500' : 'text-emerald-500'} uppercase tracking-widest`}>FIRE MONITOR</CardTitle>
+            <AlertTriangle className={`h-3.5 w-3.5 ${sensorData?.fire ? 'text-red-500' : 'text-emerald-500'}`} />
           </CardHeader>
-          <CardContent>
-            <div className={`text-2xl font-black ${sensorData?.fire ? 'text-red-500' : 'text-emerald-500'}`}>
+          <CardContent className="px-4 pb-3">
+            <div className={`text-xl font-black ${sensorData?.fire ? 'text-red-500' : 'text-emerald-500'}`}>
               {sensorData?.fire ? 'CRITICAL' : 'NORMAL'}
             </div>
-            <p className={`text-[10px] mt-1 uppercase tracking-wider font-mono ${sensorData?.fire ? 'text-red-400' : 'text-emerald-500/70'}`}>
+            <p className={`text-[9px] mt-0.5 uppercase tracking-tighter font-mono ${sensorData?.fire ? 'text-red-400' : 'text-emerald-500/70'}`}>
               {sensorData?.fire ? 'FLAME DETECTED' : 'NO HAZARD'}
             </p>
           </CardContent>
@@ -116,12 +126,12 @@ export default function Dashboard() {
 
         {/* Earthquake Monitor (formerly Orientation) */}
         <Card className="border-orange-500/20 bg-orange-500/5">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-bold text-orange-500">EARTHQUAKE MONITOR</CardTitle>
-            <RotateCcw className="h-4 w-4 text-orange-500" />
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3 px-4">
+            <CardTitle className="text-[10px] font-black text-orange-500 uppercase tracking-widest">EARTHQUAKE MONITOR</CardTitle>
+            <RotateCcw className="h-3.5 w-3.5 text-orange-500" />
           </CardHeader>
-          <CardContent>
-            <div className="font-mono text-xs space-y-1 text-orange-500/80">
+          <CardContent className="px-4 pb-3">
+            <div className="font-mono text-[10px] space-y-0.5 text-orange-500/80">
               <div className="flex justify-between">
                 <span>LATERAL X:</span>
                 <span className="font-bold">{sensorData?.earthquake?.x?.toFixed(2) ?? '0.00'}°</span>
@@ -130,38 +140,35 @@ export default function Dashboard() {
                 <span>VERTICAL Y:</span>
                 <span className="font-bold">{sensorData?.earthquake?.y?.toFixed(2) ?? '0.00'}°</span>
               </div>
-              <div className="flex justify-between">
-                <span>SENSITIVITY:</span>
-                <span className="font-bold">HIGH</span>
-              </div>
             </div>
           </CardContent>
         </Card>
 
         {/* Station Metadata (Access Code) */}
-        <Card className="border-primary/20 bg-primary/5">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-bold text-primary">STATION PORTAL</CardTitle>
-            <Wifi className="h-4 w-4 text-primary" />
+        {/* Access Code Card */}
+        <Card className="border-cyan-500/20 bg-cyan-500/5">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3 px-4">
+            <CardTitle className="text-[10px] font-black text-cyan-500 uppercase tracking-widest">STATION PORTAL</CardTitle>
+            <Wifi className="h-3.5 w-3.5 text-cyan-500" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-black text-primary tracking-widest">{accessCode}</div>
-            <p className="text-[10px] text-muted-foreground mt-1 uppercase font-mono">Citizen access code</p>
+          <CardContent className="px-4 pb-3">
+            <div className="text-xl font-black text-cyan-500 tracking-tight">{accessCode}</div>
+            <p className="text-[9px] text-cyan-500/70 mt-0.5 uppercase tracking-tighter font-mono">Citizen access code</p>
           </CardContent>
         </Card>
 
         {/* Emergency Dashboard */}
         <Card className={`${alertConfig.bgColor} border-dashed border-2 ${alertConfig.color.replace('text-', 'border-')}`}>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-bold">STATION STATUS</CardTitle>
-            <Activity className={`h-4 w-4 ${alertConfig.color}`} />
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3 px-4">
+            <CardTitle className="text-[10px] font-black uppercase tracking-widest">STATION STATUS</CardTitle>
+            <Activity className={`h-3.5 w-3.5 ${alertConfig.color}`} />
           </CardHeader>
-          <CardContent>
-            <div className={`text-2xl font-black ${alertConfig.color}`}>{alertConfig.label}</div>
-            <div className="flex gap-2 mt-2">
+          <CardContent className="px-4 pb-3">
+            <div className={`text-xl font-black ${alertConfig.color}`}>{alertConfig.label}</div>
+            <div className="flex gap-2 mt-1">
               <button
                 onClick={() => setSafeMode()}
-                className="text-[10px] font-bold px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-500 hover:bg-emerald-500/30 uppercase"
+                className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-500 hover:bg-emerald-500/30 uppercase tracking-tighter"
               >
                 Reset Safe
               </button>
@@ -174,48 +181,48 @@ export default function Dashboard() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
         {/* Sensor Details & Integrated Preview */}
         <Card className="col-span-4 overflow-hidden">
-          <CardHeader className="border-b bg-muted/30">
-            <CardTitle className="text-sm font-bold flex items-center gap-2">
-              <Activity className="h-4 w-4 text-primary" />
+          <CardHeader className="border-b bg-muted/30 py-2.5 px-4">
+            <CardTitle className="text-[10px] font-black flex items-center gap-2 uppercase tracking-[0.2em]">
+              <Activity className="h-3.5 w-3.5 text-primary" />
               STATION INTELLIGENCE OVERVIEW
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <div className="grid grid-cols-2 h-full">
               {/* Left: Accelerometer Data */}
-              <div className="p-6 space-y-4 border-r">
-                <div className="space-y-4">
-                  <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Accelerometer (m/s²)</h4>
-                  <div className="font-mono text-sm space-y-2">
-                    <div className="flex justify-between items-center p-2 rounded bg-muted/50">
+              <div className="p-4 space-y-3 border-r">
+                <div className="space-y-2">
+                  <h4 className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Accelerometer (m/s²)</h4>
+                  <div className="font-mono text-xs space-y-1">
+                    <div className="flex justify-between items-center p-1.5 rounded bg-muted/50">
                       <span className="text-muted-foreground">AXIS_X:</span>
                       <span className="text-primary font-bold">{sensorData?.accel?.x?.toFixed(3) ?? '0.000'}</span>
                     </div>
-                    <div className="flex justify-between items-center p-2 rounded bg-muted/50">
+                    <div className="flex justify-between items-center p-1.5 rounded bg-muted/50">
                       <span className="text-muted-foreground">AXIS_Y:</span>
                       <span className="text-primary font-bold">{sensorData?.accel?.y?.toFixed(3) ?? '0.000'}</span>
                     </div>
-                    <div className="flex justify-between items-center p-2 rounded bg-muted/50">
+                    <div className="flex justify-between items-center p-1.5 rounded bg-muted/50">
                       <span className="text-muted-foreground">AXIS_Z:</span>
                       <span className="text-primary font-bold">{sensorData?.accel?.z?.toFixed(3) ?? '9.800'}</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <h4 className="text-[10px] font-black text-red-500 uppercase tracking-widest">Manual Emergency Override</h4>
-                  <div className="grid grid-cols-1 gap-2">
+                <div className="space-y-1.5">
+                  <h4 className="text-[9px] font-black text-red-500 uppercase tracking-widest">Emergency Override</h4>
+                  <div className="grid grid-cols-1 gap-1.5">
                     <button
                       onClick={() => import('@/lib/api').then(api => api.triggerManualAction('call_fire'))}
-                      className="w-full flex items-center justify-center p-3 rounded-lg bg-red-600 text-white font-bold text-xs hover:bg-red-700 transition shadow-lg shadow-red-900/20"
+                      className="w-full flex items-center justify-center py-2 rounded bg-red-600 text-white font-black text-[9px] hover:bg-red-700 transition tracking-tighter"
                     >
-                      TRIGGER FIRE RESPONSE
+                      FIRE RESPONSE
                     </button>
                     <button
                       onClick={() => import('@/lib/api').then(api => api.triggerManualAction('earthquake_alert'))}
-                      className="w-full flex items-center justify-center p-3 rounded-lg bg-orange-600 text-white font-bold text-xs hover:bg-orange-700 transition shadow-lg shadow-orange-900/20"
+                      className="w-full flex items-center justify-center py-2 rounded bg-orange-600 text-white font-black text-[9px] hover:bg-orange-700 transition tracking-tighter"
                     >
-                      TRIGGER EARTHQUAKE ALERT
+                      EARTHQUAKE ALERT
                     </button>
                   </div>
                 </div>
