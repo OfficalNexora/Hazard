@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from "react";
+
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Activity, Droplets, RotateCcw, AlertTriangle, Wifi, WifiOff, Phone, Bell, Box } from "lucide-react";
@@ -34,13 +34,9 @@ export default function Dashboard() {
   const { alert, triggerEvacuation, setSafeMode, loading: alertLoading } = useAlertState();
   const detections = useDetections(10);
   const devices = useDevices();
-  const [accessCode, setAccessCode] = useState<string>('--- ---');
 
-  useEffect(() => {
-    import('@/lib/api').then(api => {
-      api.fetchAccessCode().then(res => setAccessCode(res.code));
-    });
-  }, []);
+
+
 
   const alertConfig = ALERT_CONFIG[alert.state] || ALERT_CONFIG.SAFE;
   const connectedDevices = devices.filter(d => d.connected).length;
@@ -145,17 +141,7 @@ export default function Dashboard() {
         </Card>
 
         {/* Station Metadata (Access Code) */}
-        {/* Access Code Card */}
-        <Card className="border-cyan-500/20 bg-cyan-500/5">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3 px-4">
-            <CardTitle className="text-[10px] font-black text-cyan-500 uppercase tracking-widest">STATION PORTAL</CardTitle>
-            <Wifi className="h-3.5 w-3.5 text-cyan-500" />
-          </CardHeader>
-          <CardContent className="px-4 pb-3">
-            <div className="text-xl font-black text-cyan-500 tracking-tight">{accessCode}</div>
-            <p className="text-[9px] text-cyan-500/70 mt-0.5 uppercase tracking-tighter font-mono">Citizen access code</p>
-          </CardContent>
-        </Card>
+
 
         {/* Emergency Dashboard */}
         <Card className={`${alertConfig.bgColor} border-dashed border-2 ${alertConfig.color.replace('text-', 'border-')}`}>
@@ -178,9 +164,9 @@ export default function Dashboard() {
       </div>
 
       {/* Main Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-7">
         {/* Sensor Details & Integrated Preview */}
-        <Card className="col-span-4 overflow-hidden">
+        <Card className="col-span-1 lg:col-span-4 overflow-hidden">
           <CardHeader className="border-b bg-muted/30 py-2.5 px-4">
             <CardTitle className="text-[10px] font-black flex items-center gap-2 uppercase tracking-[0.2em]">
               <Activity className="h-3.5 w-3.5 text-primary" />
@@ -188,7 +174,7 @@ export default function Dashboard() {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="grid grid-cols-2 h-full">
+            <div className="grid grid-cols-1 md:grid-cols-2 h-full">
               {/* Left: Accelerometer Data */}
               <div className="p-4 space-y-3 border-r">
                 <div className="space-y-2">
@@ -259,7 +245,7 @@ export default function Dashboard() {
         </Card>
 
         {/* AI Logs */}
-        <Card className="col-span-3">
+        <Card className="col-span-1 lg:col-span-3">
           <CardHeader>
             <CardTitle className="text-sm font-bold tracking-widest uppercase">Intelligence Log</CardTitle>
           </CardHeader>

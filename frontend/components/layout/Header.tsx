@@ -44,7 +44,7 @@ export function Header() {
     return (
         <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b bg-background/95 px-6 backdrop-blur supports-[backdrop-filter]:bg-background/60">
             <div className="flex flex-1 items-center gap-4">
-                <div className="relative w-96">
+                <div className="relative w-full md:w-96">
                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
                         type="search"
@@ -112,11 +112,7 @@ export function Header() {
                     </PopoverContent>
                 </Popover>
 
-                {/* Local Host Indicator - No User Auth */}
-                <div className="flex flex-col items-end hidden md:flex">
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest">Local Server</span>
-                    <code className="text-xs font-mono text-primary bg-primary/10 px-1.5 py-0.5 rounded">192.168.1.157</code>
-                </div>
+
             </div>
         </header>
     );

@@ -57,6 +57,7 @@ def build_server_exe():
         "--add-data", f"{BACKEND_DIR};backend",
         "--add-data", f"{FRONTEND_DIR}/out;frontend/out",
         "--add-data", f"{ROOT_DIR}/frontend_public/out;frontend_public/out",
+        "--add-data", f"{ROOT_DIR}/standalone_app.py;.",
         
         # === CRITICAL: Collect all dependencies ===
         "--collect-all", "fastapi",
@@ -64,6 +65,9 @@ def build_server_exe():
         "--collect-all", "starlette",
         "--collect-all", "pydantic",
         "--collect-all", "anyio",
+        "--collect-all", "webview",
+        "--collect-all", "clr_loader",
+        "--collect-all", "pythonnet",
         
         # === FastAPI/Uvicorn core imports ===
         "--hidden-import", "fastapi",
@@ -127,6 +131,9 @@ def build_server_exe():
         
         # === NumPy for 3D math ===
         "--hidden-import", "numpy",
+        "--hidden-import", "webview",
+        "--hidden-import", "clr_loader",
+        "--hidden-import", "pythonnet",
         
         "nexus_launcher.py"
     ]

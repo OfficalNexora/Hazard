@@ -12,6 +12,7 @@ import tkinter as tk
 import customtkinter as ctk
 from PIL import Image
 import requests
+import webview
 
 # Set theme and appearance
 ctk.set_appearance_mode("Dark")
@@ -215,6 +216,8 @@ class NexoraLauncher(ctk.CTk):
         
         # Application State
         self.server_process = None
+        self.admin_process = None
+        self.public_process = None
         self.is_running = False
         self.local_ip = self._get_local_ip()
         self.pairing_code = "--- ---"
@@ -238,17 +241,26 @@ class NexoraLauncher(ctk.CTk):
     def cleanup(self):
         """Force cleanup of child processes."""
         self.is_running = False
-        if self.server_process:
-            try:
-                self.server_process.terminate()
-                # Give it a moment to die cleanly
-                self.server_process.wait(timeout=1)
-            except:
-                try: 
-                   self.server_process.kill()
+        for proc_attr in ['server_process', 'admin_process', 'public_process']:
+            proc = getattr(self, proc_attr)
+            if proc:
+                try:
+                    if os.name == 'nt':
+                        # On Windows, taskkill /T /F is more reliable for process trees
+                        subprocess.run(['taskkill', '/F', '/T', '/PID', str(proc.pid)], 
+                                     capture_output=True, check=False)
+                    else:
+                        proc.terminate()
+                        proc.wait(timeout=1)
                 except:
-                   pass
-            self.server_process = None
+                    try: 
+                       proc.kill()
+                    except:
+                       pass
+                setattr(self, proc_attr, None)
+        
+        if self.is_running:
+            self.stop_server()
 
     def on_closing(self):
         """Handle window close event."""
@@ -324,14 +336,19 @@ class NexoraLauncher(ctk.CTk):
         ctk.CTkLabel(self.sidebar, text="STATION LINKS", font=ctk.CTkFont(size=10, weight="bold"), text_color="#64748b").grid(row=4, column=0, padx=20, pady=(10, 5), sticky="w")
         
         self.admin_btn = ctk.CTkButton(self.sidebar, text="ADMIN DASHBOARD", height=32, state="disabled", 
-                                       command=lambda: webbrowser.open("http://localhost:8000"),
+                                       command=lambda: webbrowser.open("http://localhost:3000"),
                                        fg_color="#1e293b", hover_color="#334155")
         self.admin_btn.grid(row=5, column=0, padx=20, pady=(0, 5), sticky="ew")
         
         self.public_btn = ctk.CTkButton(self.sidebar, text="PUBLIC PORTAL", height=32, state="disabled",
-                                        command=lambda: webbrowser.open("http://localhost:8000/public"),
+                                        command=lambda: webbrowser.open("http://localhost:3001/public"),
                                         fg_color="#1e293b", hover_color="#334155")
         self.public_btn.grid(row=6, column=0, padx=20, pady=(0, 10), sticky="ew")
+
+        self.standalone_btn = ctk.CTkButton(self.sidebar, text="LAUNCH STANDALONE APP", height=40, font=ctk.CTkFont(weight="bold"),
+                                            state="disabled", command=self.launch_standalone_app,
+                                            fg_color="#8b5cf6", hover_color="#7c3aed")
+        self.standalone_btn.grid(row=7, column=0, padx=20, pady=(10, 0), sticky="ew")
 
 
         # MAIN CONTENT
@@ -392,10 +409,10 @@ class NexoraLauncher(ctk.CTk):
                     continue
                 
                 # Server logs (filtered)
-                if "GET /" in msg or "WebSocket" in msg or "Uvicorn running" in msg:
+                if "GET /" in msg or "WebSocket" in msg or "Uvicorn running" in msg or "ADMIN" in msg or "PUBLIC" in msg or "API" in msg:
                     self._update_log_ui(msg.strip())
                 
-                if "Uvicorn running" in msg:
+                if "Uvicorn running" in msg or "[Server] Workers started" in msg:
                     self._on_server_ready()
         except queue.Empty:
             pass
@@ -414,11 +431,18 @@ class NexoraLauncher(ctk.CTk):
         self.status_dot.configure(text_color="#f59e0b")
         self.status_text.configure(text="INITIALIZING...")
         
-        # Start server thread (Firewall check happens inside)
+        # 0. Flush ports before starting to prevent conflicts
+        self.log("Cleaning up previous session ports...")
+        if os.name == 'nt':
+            for port in [8000, 3000, 3001, 5556, 8001]:
+                cmd = f'powershell -Command "Get-NetTCPConnection -LocalPort {port} -ErrorAction SilentlyContinue | ForEach-Object {{ Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }}"'
+                subprocess.run(cmd, shell=True, capture_output=True)
+
+        # 1. Start server thread (Firewall check happens inside)
         self.server_thread = threading.Thread(target=self._run_server, daemon=True)
         self.server_thread.start()
         
-        # Start access code updater
+        # 2. Start access code updater
         self.updater_thread = threading.Thread(target=self._update_loop, daemon=True)
         self.updater_thread.start()
 
@@ -443,6 +467,7 @@ class NexoraLauncher(ctk.CTk):
                     self.log(f"Error stopping server: {e}")
                 
                 self.server_process = None
+                self.public_process = None
         
         self.is_running = False
         self.control_btn.configure(text="START COMMAND", fg_color="#3b82f6", hover_color="#2563eb")
@@ -450,6 +475,10 @@ class NexoraLauncher(ctk.CTk):
         self.status_text.configure(text="STATION OFFLINE")
         self.admin_btn.configure(state="disabled")
         self.public_btn.configure(state="disabled")
+        
+        # Stop all processes
+        self.cleanup()
+        
         self.pairing_code = "--- ---"
         self.code_display.configure(text=self.pairing_code)
         self.log("NEXORA STATION SHUTDOWN COMPLETE.")
@@ -492,53 +521,101 @@ class NexoraLauncher(ctk.CTk):
                  import traceback
                  self.log(traceback.format_exc())
         else:
-            # DEV MODE: Run Subprocess
+            # DEV MODE: Run Subprocesses (API, Admin, Public)
             try:
-                cwd = resource_path("backend")
                 python_exe = sys.executable
                 
-                self.log(f"Starting server from: {cwd}")
-                
-                # Verify backend exists
-                if not os.path.exists(cwd):
-                     self.log(f"ERROR: Backend directory not found at {cwd}")
-                     return
+                # 1. Start Backend API (Port 8000)
+                backend_cwd = resource_path("backend")
+                self.log(f"Starting API Server from: {backend_cwd}")
+                if os.path.exists(backend_cwd):
+                    api_cmd = [python_exe, "-u", "-m", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
+                    self.server_process = subprocess.Popen(
+                        api_cmd, cwd=backend_cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                        text=True, encoding="utf-8", errors="replace", bufsize=1
+                    )
+                    threading.Thread(target=self._read_stream, args=(self.server_process, "API"), daemon=True).start()
+                else:
+                    self.log("ERROR: Backend directory not found.")
 
-                cmd = [python_exe, "-u", "-m", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
-                
-                self.server_process = subprocess.Popen(
-                    cmd, 
-                    cwd=cwd, 
-                    stdout=subprocess.PIPE, 
-                    stderr=subprocess.STDOUT, 
-                    text=True,
-                    encoding="utf-8", 
-                    errors="replace",
-                    bufsize=1  # Line buffered
-                )
+                # 2. Start Admin Dashboard (Port 3000)
+                admin_cwd = resource_path("frontend")
+                self.log(f"Starting Admin Dashboard from: {admin_cwd}")
+                if os.path.exists(admin_cwd):
+                    # We use shell=True for npm on Windows
+                    self.admin_process = subprocess.Popen(
+                        "npm run dev -- -p 3000", cwd=admin_cwd, shell=True,
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                        text=True, encoding="utf-8", errors="replace", bufsize=1
+                    )
+                    threading.Thread(target=self._read_stream, args=(self.admin_process, "ADMIN"), daemon=True).start()
+                    self.log("Admin Dashboard (Next.js) starting on port 3000...")
+                else:
+                    self.log("ERROR: Frontend dashboard directory not found.")
 
-                self.log("Server process started...")
-                
-                for line in iter(self.server_process.stdout.readline, ""):
-                    if not self.is_running: break
-                    # Push to queue for consistency
-                    self.log_queue.put(line)
+                # 3. Start Public Portal (Port 3001)
+                public_cwd = resource_path("frontend_public")
+                self.log(f"Starting Public Portal from: {public_cwd}")
+                if os.path.exists(public_cwd):
+                    self.public_process = subprocess.Popen(
+                        "npm run dev -- -p 3001", cwd=public_cwd, shell=True,
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                        text=True, encoding="utf-8", errors="replace", bufsize=1
+                    )
+                    threading.Thread(target=self._read_stream, args=(self.public_process, "PUBLIC"), daemon=True).start()
+                    self.log("Public Portal (Next.js) starting on port 3001...")
+                else:
+                    self.log("ERROR: Public Portal directory not found.")
+
+                # Keep the main server thread alive while running
+                while self.is_running:
+                    time.sleep(1)
+                    
             except Exception as e:
                 self.log(f"CRITICAL LAUNCH ERROR: {e}")
                 import traceback
                 self.log(traceback.format_exc())
+
+    def _read_stream(self, process, label):
+        """Helper to read process output and push to log queue."""
+        for line in iter(process.stdout.readline, ""):
+            if not self.is_running: break
+            # Push to queue for consistency
+            self.log_queue.put(f"[{label}] {line.strip()}")
+        if process.stdout:
+            process.stdout.close()
 
     def _on_server_ready(self):
         self.status_dot.configure(text_color="#10b981")
         self.status_text.configure(text="STATION ACTIVE")
         self.admin_btn.configure(state="normal")
         self.public_btn.configure(state="normal")
+        self.standalone_btn.configure(state="normal")
         self.log("WEBSITE ACCESSIBLE AT PORT 8000")
+
+    def launch_standalone_app(self):
+        """Launch the admin dashboard in a separate standalone process."""
+        self.log("Launching Standalone Mission Control...")
+        try:
+            python_exe = sys.executable
+            # Launch as a separate process to avoid GUI threading conflicts
+            subprocess.Popen([python_exe, "standalone_app.py"], cwd=os.path.abspath("."))
+        except Exception as e:
+            self.log(f"Failed to launch standalone app: {e}")
 
     def _update_loop(self):
         while self.is_running:
             try:
-                # Fetch pairing code from local API
+                # 1. Health Check (Fallback for stuck GUI)
+                if self.status_text.cget("text") == "INITIALIZING...":
+                    try:
+                        r = requests.get("http://localhost:8000/api/status", timeout=1)
+                        if r.status_code == 200:
+                            self.after(0, self._on_server_ready)
+                    except:
+                        pass
+
+                # 2. Fetch pairing code
                 resp = requests.get("http://localhost:8000/api/access_code", timeout=2)
                 if resp.status_code == 200:
                     code = resp.json().get('code', '--- ---')
@@ -546,7 +623,7 @@ class NexoraLauncher(ctk.CTk):
                     self.after(0, lambda: self.code_display.configure(text=self.pairing_code))
             except:
                 pass
-            time.sleep(10)
+            time.sleep(5)
 
 if __name__ == "__main__":
     import multiprocessing

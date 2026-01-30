@@ -25,8 +25,10 @@ export function usePublicAuth() {
 
     const pair = useCallback(async (code: string) => {
         try {
-            const res = await fetch(`http://localhost:8000/api/verify_code?code=${code}`, {
-                method: 'POST'
+            const res = await fetch(`http://localhost:8000/api/verify_code`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code })
             });
             if (res.ok) {
                 localStorage.setItem('nexus_public_code', code);

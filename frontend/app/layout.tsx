@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
+import { MobileNav } from "@/components/layout/MobileNav";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -26,13 +27,15 @@ export default function RootLayout({
           {/* Sidebar */}
           <Sidebar />
 
+
           {/* Main Content Area */}
-          <div className="flex flex-1 flex-col pl-64 transition-all duration-300">
+          <div className="flex flex-1 flex-col pl-0 md:pl-16 pb-16 md:pb-0 transition-all duration-300">
             <Header />
             <main className="flex-1 overflow-y-auto p-6 scroll-smooth">
               {children}
             </main>
           </div>
+          <MobileNav />
         </div>
       </body>
     </html>
