@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = []
+datas = [('C:\\Users\\Victo\\Hazard\\worker\\yolov8n.pt', '.')]
 binaries = []
 hiddenimports = []
 tmp_ret = collect_all('ultralytics')
@@ -11,7 +11,7 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
-    ['C:\\Users\\busto\\OneDrive\\Documents\\MOD-EVAC-MS\\worker/worker_app.py'],
+    ['C:\\Users\\Victo\\Hazard\\worker/worker_app.py'],
     pathex=[],
     binaries=binaries,
     datas=datas,

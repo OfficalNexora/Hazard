@@ -96,10 +96,17 @@ def main():
     if not os.path.exists(DIST_DIR):
         os.makedirs(DIST_DIR)
     
-    build_frontend()
-    build_server_exe()
+    # build_frontend() # Skipped: already built manually for stability
     
-    # -Focusing on the worker build for now.
+    # Ensure backend/static exists if we want to serve it, though PyInstaller bundles from frontend/out
+    static_dest = os.path.join(BACKEND_DIR, "static")
+    if not os.path.exists(static_dest):
+        out_dir = os.path.join(FRONTEND_DIR, "out")
+        if os.path.exists(out_dir):
+            print(f"Copying {out_dir} to {static_dest}...")
+            shutil.copytree(out_dir, static_dest)
+
+    build_server_exe()
     build_worker_exe()
     
     print("\n[Build] Completed my build process. Checking my 'dist' folder for the final EXEs.")

@@ -237,10 +237,10 @@ app.add_middleware(
 # API ENDPOINTS
 # ============================================================================
 
-@app.get("/")
-async def root():
-    """Redirect to dashboard"""
-    return {"message": "MOD-EVAC-MS Backend API", "docs": "/docs"}
+# @app.get("/")
+# async def root():
+#     """Redirect to dashboard"""
+#     return {"message": "MOD-EVAC-MS Backend API", "docs": "/docs"}
 
 
 @app.get("/api/status")
@@ -488,12 +488,12 @@ FRONTEND_PATH = os.path.join(os.path.dirname(__file__), "..", "frontend", "out")
 PUBLIC_PORTAL_PATH = os.path.join(os.path.dirname(__file__), "..", "frontend_public", "out")
 
 if os.path.exists(FRONTEND_PATH):
-    # Serve Public Portal at /public
-    if os.path.exists(PUBLIC_PORTAL_PATH):
-        app.mount("/public", StaticFiles(directory=PUBLIC_PORTAL_PATH, html=True), name="public")
+    # Serve Admin Dashboard at /admin
+    app.mount("/admin", StaticFiles(directory=FRONTEND_PATH, html=True), name="admin")
     
-    # Serve Admin Dashboard at /
-    app.mount("/", StaticFiles(directory=FRONTEND_PATH, html=True), name="admin")
+    # Serve Public Portal at /
+    if os.path.exists(PUBLIC_PORTAL_PATH):
+        app.mount("/", StaticFiles(directory=PUBLIC_PORTAL_PATH, html=True), name="public")
 
 
 # ============================================================================

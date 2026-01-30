@@ -101,12 +101,12 @@ class NexoraLauncher(ctk.CTk):
         ctk.CTkLabel(self.sidebar, text="STATION LINKS", font=ctk.CTkFont(size=10, weight="bold"), text_color="#64748b").grid(row=4, column=0, padx=20, pady=(20, 0), sticky="w")
         
         self.admin_btn = ctk.CTkButton(self.sidebar, text="ADMIN DASHBOARD", height=32, state="disabled", 
-                                       command=lambda: webbrowser.open("http://localhost:8000"),
+                                       command=lambda: webbrowser.open("http://localhost:8000/admin"),
                                        fg_color="#1e293b", hover_color="#334155")
         self.admin_btn.grid(row=5, column=0, padx=20, pady=5)
         
         self.public_btn = ctk.CTkButton(self.sidebar, text="PUBLIC PORTAL", height=32, state="disabled",
-                                        command=lambda: webbrowser.open(f"http://{self.local_ip}:8000/public"),
+                                        command=lambda: webbrowser.open(f"http://{self.local_ip}:8000"),
                                         fg_color="#1e293b", hover_color="#334155")
         self.public_btn.grid(row=6, column=0, padx=20, pady=5)
 

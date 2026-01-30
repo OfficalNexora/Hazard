@@ -5,7 +5,7 @@ a = Analysis(
     ['nexus_launcher.py'],
     pathex=[],
     binaries=[],
-    datas=[('C:\\Users\\busto\\OneDrive\\Documents\\MOD-EVAC-MS\\backend', 'backend'), ('C:\\Users\\busto\\OneDrive\\Documents\\MOD-EVAC-MS\\frontend/out', 'frontend/out'), ('C:\\Users\\busto\\OneDrive\\Documents\\MOD-EVAC-MS/frontend_public/out', 'frontend_public/out')],
+    datas=[('C:\\Users\\Victo\\Hazard\\backend', 'backend'), ('C:\\Users\\Victo\\Hazard\\frontend/out', 'frontend/out'), ('C:\\Users\\Victo\\Hazard/frontend_public/out', 'frontend_public/out')],
     hiddenimports=['engineio.async_drivers.threading', 'uvicorn.loops.auto', 'uvicorn.protocols.http.auto', 'uvicorn.lifespan.on', 'win32timezone'],
     hookspath=[],
     hooksconfig={},
