@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bell, Search, ShieldCheck, Check } from "lucide-react";
+import { Bell, Search, ShieldCheck, Check, Phone } from "lucide-react";
+import CommunicationsModal from "@/components/modals/CommunicationsModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -13,6 +14,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export function Header() {
+    const [isCommsOpen, setIsCommsOpen] = useState(false);
     const [time, setTime] = useState("");
     const [notifications, setNotifications] = useState([
         { id: 1, title: "Motion Detected", desc: "Camera 03 (North Gate) trigger", time: "2m ago", unread: true },
@@ -113,7 +115,18 @@ export function Header() {
                 </Popover>
 
 
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="relative text-muted-foreground hover:text-foreground"
+                    onClick={() => setIsCommsOpen(true)}
+                    title="Communications Link"
+                >
+                    <Phone className="h-5 w-5" />
+                </Button>
+
             </div>
+            <CommunicationsModal isOpen={isCommsOpen} onClose={() => setIsCommsOpen(false)} />
         </header>
     );
 }

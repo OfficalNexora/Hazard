@@ -285,6 +285,71 @@ class StateManager:
             "value": int(state),
             "reason": reason
         })
+
+        # AUTOMATED RESPONSE: Trigger Calls/SMS on Critical Alerts
+        if state in [AlertState.DANGER, AlertState.EVACUATE]:
+            # Import here to avoid circular dependency
+            try:
+                # We need to find where sms_worker is located (it might be in same dir)
+                # If running from main.py, it's just 'sms_worker'
+                # But state_manager is imported by server, so this should work
+                from sms_worker import get_sms_worker
+                worker = get_sms_worker()
+                
+                if worker:
+                    # 1. CALL contacts
+                    for contact in self._gsm_contacts["call"]:
+                        # Only call if category is 'general' or matches the alert reason (loose match)
+                        alert_type = reason.lower()
+                        cat = contact.get('category', 'general')
+                        
+                        if cat == 'general' or cat in alert_type:
+                            print(f"[StateManager] Auto-Calling {contact['name']} ({contact['number']}) for {cat}...")
+                            worker.make_call(contact['number'])
+                            time.sleep(2)
+                            worker.play_audio() # Start Audio Broadcast
+                            time.sleep(3) # Delay between calls
+                    
+                    # 2. SMS contacts
+                    for contact in self._gsm_contacts["sms"]:
+                        cat = contact.get('category', 'general')
+                        alert_type = reason.lower()
+                        
+                        if cat == 'general' or cat in alert_type:
+                            msg = contact['message'] or f"ALERT: {state.name} detected! Reason: {reason}"
+                            print(f"[StateManager] Auto-SMS to {contact['name']} ({contact['number']}) for {cat}...")
+                            worker.send_sms(contact['number'], msg)
+            except ImportError:
+                print("[StateManager] Could not import sms_worker for auto-response")
+            except Exception as e:
+                print(f"[StateManager] Auto-response failed: {e}")
+
+        # AUTOMATED RESPONSE: Trigger Calls/SMS on Critical Alerts
+        if state in [AlertState.DANGER, AlertState.EVACUATE]:
+            # Import here to avoid circular dependency
+            try:
+                # We need to find where sms_worker is located (it might be in same dir)
+                # If running from main.py, it's just 'sms_worker'
+                # But state_manager is imported by server, so this should work
+                from sms_worker import get_sms_worker
+                worker = get_sms_worker()
+                
+                if worker:
+                    # 1. CALL contacts
+                    for contact in self._gsm_contacts["call"]:
+                        print(f"[StateManager] Auto-Calling {contact['name']} ({contact['number']})...")
+                        worker.make_call(contact['number'])
+                        time.sleep(5) # Delay between calls
+                    
+                    # 2. SMS contacts
+                    for contact in self._gsm_contacts["sms"]:
+                        msg = contact['message'] or f"ALERT: {state.name} detected! Reason: {reason}"
+                        print(f"[StateManager] Auto-SMS to {contact['name']} ({contact['number']})...")
+                        worker.send_sms(contact['number'], msg)
+            except ImportError:
+                print("[StateManager] Could not import sms_worker for auto-response")
+            except Exception as e:
+                print(f"[StateManager] Auto-response failed: {e}")
     
     def get_alert(self) -> dict:
         """Get current alert state (thread-safe)"""

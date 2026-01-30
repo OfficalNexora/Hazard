@@ -43,7 +43,13 @@ except ImportError:
     def get_sensor_worker(): return None
     def init_vision_worker(): return None
     def init_control_worker(**kwargs): return None
+    def init_control_worker(**kwargs): return None
     def init_sensor_worker(): return None
+
+try:
+    from sms_worker import get_sms_worker
+except ImportError:
+    def get_sms_worker(): return None
     
 from worker_manager import discovery, worker_manager
 
@@ -404,6 +410,35 @@ async def classify_worker(req: ClassificationRequest):
     return {"status": "success"}
 
 
+@app.post("/api/test/trigger_hardware")
+async def test_hardware_trigger(alert_level: int = 4):
+    """Simulate a hardware trigger (Sensor Breach) -> Calls/SMS"""
+    # 1. Set Alert State (This triggers the logic in state_manager we just added)
+    reason = "Simulated Hardware Trigger (User Test)"
+    state.set_alert(AlertState(alert_level), reason)
+    return {"status": "triggered", "level": alert_level, "reason": reason}
+
+
+@app.post("/api/communication/upload_audio")
+async def upload_audio(file: UploadFile = File(...)):
+    """Upload an MP3 for emergency broadcasts"""
+    AUDIO_DIR = os.path.join(os.path.dirname(__file__), "audio")
+    if not os.path.exists(AUDIO_DIR):
+        os.makedirs(AUDIO_DIR)
+        
+    file_path = os.path.join(AUDIO_DIR, "alert.mp3") # Fixed name for simplicity in auto-push
+    with open(file_path, "wb") as buffer:
+        content = await file.read()
+        buffer.write(content)
+        
+    # Auto-push to connected device
+    worker = get_sms_worker()
+    if worker:
+        worker.push_audio(file_path)
+        
+    return {"status": "success", "filename": "alert.mp3"}
+
+
 @app.get("/api/history")
 async def get_system_history(limit: int = 50):
     """Get historical records from SQLite"""
@@ -452,6 +487,40 @@ async def register_camera(req: CameraRequest):
         state.update_device(req.device_id, "esp32_cam", True, req.ip)
         return {"status": "success", "device_id": req.device_id, "vflip": req.vflip}
     raise HTTPException(status_code=503, detail="Vision worker not available")
+
+
+# ============================================================================
+# COMMUNICATION ENDPOINTS (ADB)
+# ============================================================================
+
+class CommunicationRequest(BaseModel):
+    number: str
+    message: str = ""
+
+@app.post("/api/communication/sms")
+async def send_sms(req: CommunicationRequest):
+    """Send SMS via connected Android device (ADB)"""
+    worker = get_sms_worker()
+    if not worker:
+        # Fallback for testing on Windows if worker missing (should be there though)
+        return {"status": "simulated", "message": "SMS Worker not loaded"}
+    
+    result = worker.send_sms(req.number, req.message)
+    if result["success"]:
+        return {"status": "success"}
+    raise HTTPException(status_code=500, detail=result.get("error"))
+
+@app.post("/api/communication/call")
+async def make_call(req: CommunicationRequest):
+    """Initiate call via connected Android device (ADB)"""
+    worker = get_sms_worker()
+    if not worker:
+        return {"status": "simulated", "message": "SMS Worker not loaded"}
+        
+    result = worker.make_call(req.number)
+    if result["success"]:
+        return {"status": "success"}
+    raise HTTPException(status_code=500, detail=result.get("error"))
 
 
 # ============================================================================

@@ -18,6 +18,18 @@ import zmq
 
 from state_manager import state
 
+# Path hack to find the AI module which is in parent directory's parent... 
+# Actually, since we are in backend/, and AI.py/ is in ../AI.py/, we need to append path
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+try:
+    from AI.py.OBSTRUCTIONAI import ObstructionAI
+except ImportError:
+    print("[VisionWorker] Could not import OBSTRUCTIONAI. Is the path correct?")
+    ObstructionAI = None
+
 
 class VisionWorker:
     """
@@ -70,6 +82,13 @@ class VisionWorker:
             print("[VisionWorker] Model Loaded Successfully!")
         except Exception as e:
             print(f"[VisionWorker] FAILED to load model: {e}")
+
+        # Initialize Obstruction AI (Android Fallback)
+        if ObstructionAI:
+            self.obstruction_ai = ObstructionAI()
+            print("[VisionWorker] Obstruction AI Initialized")
+        else:
+            self.obstruction_ai = None
 
     def add_camera(self, device_id: str, source: str, vflip: bool = False, hflip: bool = False):
         """Add a new camera source (Serial PORT or HTTP URL)
@@ -170,10 +189,26 @@ class VisionWorker:
             # Note: worker_manager already added them to state
             
         else:
-            # LOCAL FALLBACK: Run local YOLO
+            # LOCAL FALLBACK: Run local YOLO or Obstruction AI
             if self.model is None:
-                # Model still loading
-                cv2.putText(frame, "INITIALIZING AI...", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
+                # Model still loading or not available (Android)
+                
+                # Try Obstruction AI
+                if self.obstruction_ai:
+                     obstructions = self.obstruction_ai.detect_obstructions(frame)
+                     for obs in obstructions:
+                         x, y, w, h = obs['bbox']
+                         conf = obs['confidence']
+                         detections_to_draw.append({
+                            "class": "Obstruction",
+                            "confidence": conf,
+                            "bbox": [x, y, x+w, y+h]
+                         })
+                         # Add to state
+                         state.add_detection("Obstruction", conf, [x, y, x+w, y+h], frame_id)
+                else:
+                    cv2.putText(frame, "INITIALIZING AI...", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
+                
                 return frame
 
             # Either we chose to run locally, or the worker timed out

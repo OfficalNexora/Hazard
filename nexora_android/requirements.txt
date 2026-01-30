@@ -3,4 +3,5 @@ fastapi
 uvicorn
 websockets
 numpy
-# Excluded: opencv-python, ultralytics, pyserial
+opencv-python
+# Excluded: ultralytics, pyserial
