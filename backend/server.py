@@ -16,6 +16,7 @@ import json
 import os
 import threading
 import time
+import subprocess
 from typing import List, Optional, Set
 from contextlib import asynccontextmanager
 
@@ -25,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 import uvicorn
-from database import init_db, get_history, load_config, save_config
+from database import init_db, get_history, load_config, save_config, add_adb_script, delete_adb_script, get_adb_scripts
 
 from state_manager import state, AlertState
 from sensor_worker import init_sensor_worker, get_sensor_worker
@@ -189,6 +190,15 @@ class GsmContact(BaseModel):
     name: str = ""
     message: str = ""
     category: str = "general"
+
+class AdbScriptRequest(BaseModel):
+    label: str
+    command: str
+    category: str = "general"
+
+class AdbExecuteRequest(BaseModel):
+    device_id: str
+    script_id: int
 
 class ClassificationRequest(BaseModel):
     device_id: str
@@ -398,6 +408,74 @@ async def get_settings():
     return load_config()
 
 
+# ============================================================================
+# ADB & AUTOMATION ENDPOINTS
+# ============================================================================
+
+@app.get("/api/adb/devices")
+async def get_adb_devices_api():
+    """Scan for connected ADB devices"""
+    config = load_config()
+    adb_path = config.get("adb_path", "adb")
+    try:
+        result = subprocess.run([adb_path, "devices"], capture_output=True, text=True, timeout=5)
+        lines = result.stdout.strip().split('\n')[1:]
+        devices = []
+        for line in lines:
+            if line.strip():
+                parts = line.split()
+                if len(parts) >= 2:
+                    devices.append({"id": parts[0], "status": parts[1]})
+        return {"devices": devices}
+    except Exception as e:
+        return {"devices": [], "error": str(e)}
+
+@app.get("/api/adb/scripts")
+async def get_adb_scripts_api():
+    """Get all saved labeled ADB scripts"""
+    return get_adb_scripts()
+
+@app.post("/api/adb/scripts")
+async def add_adb_script_api(script: AdbScriptRequest):
+    """Add a new labeled ADB script"""
+    add_adb_script(script.label, script.command, script.category)
+    return {"status": "success"}
+
+@app.delete("/api/adb/scripts/{script_id}")
+async def delete_adb_script_api(script_id: int):
+    """Delete a saved ADB script"""
+    delete_adb_script(script_id)
+    return {"status": "success"}
+
+@app.post("/api/adb/execute")
+async def execute_adb_script(req: AdbExecuteRequest):
+    """Execute a saved script on a device"""
+    scripts = get_adb_scripts()
+    script = next((s for s in scripts if s["id"] == req.script_id), None)
+    if not script:
+        raise HTTPException(status_code=404, detail="Script not found")
+    
+    config = load_config()
+    adb_path = config.get("adb_path", "adb")
+    
+    try:
+        # Run the command via adb shell
+        # Using shell=True or list depends on security, 
+        # but since this is a local tool for devs, list is safer.
+        cmd = [adb_path, "-s", req.device_id, "shell"] + script["command"].split()
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        return {
+            "status": "executed",
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "returncode": result.returncode
+        }
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="ADB command timed out")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/settings")
 async def update_settings(config: dict):
     """Update system configuration"""
@@ -485,6 +563,37 @@ async def get_events(
         return {"events": [e.to_dict() for e in events]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/test/trigger_hardware")
+async def test_hardware_trigger(alert_level: int = 4):
+    """
+    Simulate a hardware trigger event.
+    Iterates through all configured GSM recipients and broadcasts an alert.
+    """
+    print(f"[TEST] Triggering Alert Level {alert_level} from Frontend")
+    
+    # 1. Provide visual feedback via LEDs (if control worker is active)
+    control = get_control_worker()
+    if control:
+        try:
+            control._send_led_command(AlertState(alert_level))
+        except: pass
+
+    # 2. Get all recipients
+    contacts = state.get_gsm_contacts()
+    sms_recipients = contacts.get("sms", [])
+    
+    # 3. Broadcast SMS
+    count = 0
+    for contact in sms_recipients:
+        msg = contact.get("message", "WARNING: Simulated Hazard Alert! Please evacuate immediately.")
+        print(f"[TEST] Broadcasting to {contact['number']}")
+        # Fire and forget task to not block response
+        asyncio.create_task(sender.send_sms(contact["number"], msg))
+        count += 1
+        
+    return {"status": "triggered", "recipients_notified": count}
 
 
 @app.get("/api/events/active")

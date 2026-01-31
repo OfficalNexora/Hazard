@@ -297,6 +297,42 @@ const API = {
             console.error('[API] getDevices error:', e);
             throw e;
         }
+    },
+
+    async getGsmContacts() {
+        try {
+            const response = await fetch(`${this.httpUrl}/gsm/contacts`);
+            return await response.json();
+        } catch (e) {
+            console.error('[API] getGsmContacts error:', e);
+            throw e;
+        }
+    },
+
+    async addGsmContact(contact) {
+        try {
+            const response = await fetch(`${this.httpUrl}/gsm/contacts`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(contact)
+            });
+            return await response.json();
+        } catch (e) {
+            console.error('[API] addGsmContact error:', e);
+            throw e;
+        }
+    },
+
+    async deleteGsmContact(number) {
+        try {
+            const response = await fetch(`${this.httpUrl}/gsm/contacts/${number}`, {
+                method: 'DELETE'
+            });
+            return await response.json();
+        } catch (e) {
+            console.error('[API] deleteGsmContact error:', e);
+            throw e;
+        }
     }
 };
 

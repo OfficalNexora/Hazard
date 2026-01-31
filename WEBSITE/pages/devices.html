@@ -53,6 +53,12 @@
                             <path d="M12 2a10 10 0 0 1 10 10"></path>
                             <path d="M12 12L2.3 2.3"></path>
                         </svg></span> AI Analysis</a></li>
+            <li class="nav-item"><a href="communication.html"><span class="icon-nav"><svg
+                            xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                        </svg></span> Communication</a></li>
+
             <li class="nav-item"><a href="devices.html"><span class="icon-nav"><svg xmlns="http://www.w3.org/2000/svg"
                             width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -99,11 +105,8 @@
 
                 <!-- TAB SWITCHER -->
                 <div class="tab-switcher" style="margin-top: 10px;">
-                    <button id="btn-view-network" class="tab-btn active">
+                    <button id="btn-view-network" class="tab-btn active" style="width: 100%;">
                         <span>📡</span> Network Devices
-                    </button>
-                    <button id="btn-view-gsm" class="tab-btn">
-                        <span>📱</span> GSM Numbers
                     </button>
                 </div>
             </div>
@@ -170,32 +173,6 @@
                 </div>
             </div>
 
-            <!-- VIEW 2: GSM NUMBERS -->
-            <div id="view-gsm" style="display: none;">
-                <div class="card">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-                        <h3 style="margin:0; font-size:1.1rem; color:var(--text-primary);">Emergency Contacts (SMS
-                            Output)</h3>
-                        <button class="btn btn-sm btn-secondary">+ Add Contact</button>
-                    </div>
-                    <div class="table-container">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Contact Name</th>
-                                    <th>Phone Number</th>
-                                    <th>Role</th>
-                                    <th>Status</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="gsm-table-body">
-                                <!-- Populated by devices.js -->
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
     </main>
     <script src="../js/main.js"></script>
     <script src="../js/icons.js"></script>

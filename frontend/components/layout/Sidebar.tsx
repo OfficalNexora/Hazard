@@ -8,7 +8,8 @@ import {
     Radio,
     AlertTriangle,
     Settings,
-    Activity
+    Activity,
+    Terminal
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +21,7 @@ const navItems = [
     { name: "Alerts", href: "/alerts", icon: AlertTriangle },
     { name: "Communication", href: "/communication", icon: Radio },
     { name: "Analysis", href: "/analysis", icon: Activity },
+    { name: "Automation", href: "/automation", icon: Terminal },
     { name: "Settings", href: "/settings", icon: Settings },
 ];
 

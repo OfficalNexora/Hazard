@@ -14,7 +14,8 @@ import {
     ShieldCheck,
     Info,
     AlertOctagon,
-    Key
+    Key,
+    Terminal
 } from "lucide-react";
 import { useSettings, useAccessCode } from "@/lib/hooks";
 
@@ -153,7 +154,7 @@ export default function SettingsPage() {
                         <div className="space-y-2">
                             <Label>Default Alert Mode</Label>
                             <select
-                                className="w-full p-2 rounded-md border border-input bg-background"
+                                className="w-full p-2 rounded-md border border-input bg-background text-sm"
                                 value={localSettings?.alert_mode || "Visual"}
                                 onChange={(e) => setLocalSettings({ ...localSettings, alert_mode: e.target.value })}
                             >
@@ -162,6 +163,21 @@ export default function SettingsPage() {
                                 <option>Audible (Siren + Voice)</option>
                                 <option>Critical (Auto-Messaging)</option>
                             </select>
+                        </div>
+
+                        <div className="space-y-2 pt-2 border-t">
+                            <Label className="flex items-center gap-2">
+                                <Terminal className="h-4 w-4 text-primary" />
+                                ADB Binary Path
+                            </Label>
+                            <Input
+                                value={localSettings?.adb_path || "adb"}
+                                onChange={(e) => setLocalSettings({ ...localSettings, adb_path: e.target.value })}
+                                placeholder="e.g. C:\adb\adb.exe or just 'adb'"
+                            />
+                            <p className="text-[10px] text-muted-foreground">
+                                Path to the ADB executable. Use 'adb' if it's in your system PATH.
+                            </p>
                         </div>
                     </CardContent>
                 </Card>

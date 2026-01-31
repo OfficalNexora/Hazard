@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Phone, MessageSquare, X, Send } from 'lucide-react';
+import { sendSMS, initiateCall } from '@/lib/api';
 
 interface CommunicationsModalProps {
     isOpen: boolean;
@@ -27,29 +28,22 @@ export default function CommunicationsModal({ isOpen, onClose }: CommunicationsM
         // We try to use the backend API first (ADB), if that fails/timeouts, we fallback to protocol handlers
 
         try {
-            const endpoint = activeTab === 'call' ? '/api/communication/call' : '/api/communication/sms';
-            const payload = activeTab === 'call' ? { number } : { number, message };
+            // Timeout 5s for ADB operation
+            const promise = activeTab === 'call'
+                ? initiateCall(number)
+                : sendSMS(number, message);
 
-            // Timeout 2s (if ADB is local, it's fast. If not, fallback)
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 2000);
+            // Race against timeout
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Timeout')), 5000)
+            );
 
-            const res = await fetch(`http://localhost:8000${endpoint}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-                signal: controller.signal
-            });
-            clearTimeout(timeoutId);
+            await Promise.race([promise, timeoutPromise]);
 
-            if (res.ok) {
-                setStatus('Request Sent via ADB Node');
-            } else {
-                // Backend failed, fallback
-                throw new Error("Backend Error");
-            }
+            setStatus('Request Sent via ADB Node');
 
         } catch (e) {
+            console.warn("Backend ADB failed, falling back to local protocol handlers", e);
             // Fallback to PC Protocol Handlers (Phone Link / Skype)
             setStatus('Opening Default App...');
             if (activeTab === 'call') {
@@ -143,20 +137,22 @@ export default function CommunicationsModal({ isOpen, onClose }: CommunicationsM
 
                 </div>
 
-                <div className="px-6 pb-6">
+                <div className="px-6 pb-6 pt-2">
                     <button
                         onClick={async () => {
                             setLoading(true);
                             setStatus('Simulating Sensor Breach...');
                             try {
-                                await fetch('http://localhost:8000/api/test/trigger_hardware?alert_level=4', { method: 'POST' });
-                                setStatus('Triggered! Expect Call/SMS.');
+                                await fetch('http://localhost:8000/api/test/trigger_hardware?alert_level=4');
+                                setStatus('Triggered! Broadcasting to Recipients.');
                             } catch (e) {
                                 setStatus('Trigger Failed');
                             }
                             setLoading(false);
+                            // Clear status after 3s
+                            setTimeout(() => setStatus(null), 3000);
                         }}
-                        className="w-full text-xs font-bold text-red-400 bg-red-950/20 border border-red-900/50 hover:bg-red-900/40 py-3 rounded transition-colors uppercase tracking-widest"
+                        className="w-full text-xs font-bold text-red-400 bg-red-950/20 border border-red-900/50 hover:bg-red-900/40 py-3 rounded transition-colors uppercase tracking-widest mt-6"
                     >
                         ⚠️ Test Hardware Trigger
                     </button>

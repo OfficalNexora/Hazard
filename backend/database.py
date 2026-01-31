@@ -61,6 +61,16 @@ def init_db():
         )
     ''')
     
+    # ADB Scripts
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS adb_scripts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            label TEXT,
+            command TEXT,
+            category TEXT DEFAULT 'general'
+        )
+    ''')
+    
     conn.commit()
     conn.close()
 
@@ -125,6 +135,7 @@ def load_config():
         "confidence_threshold": 0.4,
         "alert_mode": "Visual",
         "analysis_interval_ms": 1000,
+        "adb_path": "adb",
         "hazard_classes": ["Fire", "Smoke", "Flood", "Falling Debris", "Landslide", "Explosion", "Collapsed Structure", "Industrial Accident"]
     }
 
@@ -191,3 +202,48 @@ def set_worker_classification(device_id: str, classification: str):
         conn.close()
     except Exception as e:
         print(f"[DB] Cluster classification error: {e}")
+
+# ADB Script Management
+def add_adb_script(label: str, command: str, category: str = "general"):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO adb_scripts (label, command, category) VALUES (?, ?, ?)",
+            (label, command, category)
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[DB] ADB script add error: {e}")
+
+def delete_adb_script(script_id: int):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM adb_scripts WHERE id = ?", (script_id,))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[DB] ADB script delete error: {e}")
+
+def get_adb_scripts():
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM adb_scripts")
+        rows = cursor.fetchall()
+        scripts = []
+        for row in rows:
+            scripts.append({
+                "id": row["id"],
+                "label": row["label"],
+                "command": row["command"],
+                "category": row["category"]
+            })
+        conn.close()
+        return scripts
+    except Exception as e:
+        print(f"[DB] ADB script fetch error: {e}")
+        return []

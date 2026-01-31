@@ -198,6 +198,26 @@ export async function registerCamera(deviceId: string, ip: string): Promise<{ st
     return res.json();
 }
 
+export async function sendSMS(number: string, message: string): Promise<{ status: string }> {
+    const res = await fetch(`${API_BASE_URL}/api/communication/sms`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ number, message }),
+    });
+    if (!res.ok) throw new Error('Failed to send SMS');
+    return res.json();
+}
+
+export async function initiateCall(number: string): Promise<{ status: string }> {
+    const res = await fetch(`${API_BASE_URL}/api/communication/call`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ number }),
+    });
+    if (!res.ok) throw new Error('Failed to initiate call');
+    return res.json();
+}
+
 /**
  * Direct handshake with ESP32-CAM in AP mode
  * laptop must be connected to camera's WiFi

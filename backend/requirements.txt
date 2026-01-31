@@ -9,3 +9,7 @@ pyserial
 python-dotenv
 customtkinter
 pyttsx3
+torch
+torchvision
+torchaudio
+cap-from-youtube

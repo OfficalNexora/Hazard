@@ -1,0 +1,1 @@
+sshpass.exe -p 5090 ssh -p 8022 -o StrictHostKeyChecking=no u0_a10443@localhost ls

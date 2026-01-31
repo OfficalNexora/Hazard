@@ -21,6 +21,7 @@ from enum import IntEnum
 
 from state_manager import state, AlertState
 from voice_engine import voice_engine
+from adb_worker import adb_worker
 
 
 class GsmStatus(IntEnum):
@@ -245,7 +246,8 @@ class ControlWorker:
                     time.sleep(self.retry_delay)
             
             if not answered:
-                 print(f"[Control] CRITICAL: Failed to reach {number} after 5 attempts")
+                 print(f"[Control] CRITICAL: Failed to reach {number} via GSM HW. Trying ADB...")
+                 adb_worker.make_call(number)
         
         # Also send SOS SMS
         self._send_gsm_message(f"SOS: {reason}", category=category)
@@ -270,7 +272,11 @@ class ControlWorker:
             msg = contact.get("message") or message
             cmd = {"cmd": "gsm_sms", "number": number, "message": msg}
             self.sensor_worker.send_command(cmd)
-            print(f"[Control] GSM SMS sent to {number}: {msg[:30]}...")
+            print(f"[Control] GSM SMS sent to {number} via HW: {msg[:30]}...")
+            
+            # Redundant ADB SMS
+            if adb_worker.is_device_connected():
+                adb_worker.send_sms(number, msg)
         
         self.gsm_status = GsmStatus.IDLE
     
