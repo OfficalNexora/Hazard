@@ -71,6 +71,22 @@ def init_db():
         )
     ''')
     
+
+    # Cameras
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS cameras (
+            device_id TEXT PRIMARY KEY,
+            name TEXT,
+            type TEXT, -- 'esp32', 'tapo', 'hikvision', etc.
+            ip TEXT,
+            username TEXT,
+            password TEXT,
+            port INTEGER,
+            stream_quality TEXT,
+            vflip BOOLEAN DEFAULT 0
+        )
+    ''')
+    
     conn.commit()
     conn.close()
 
@@ -246,4 +262,56 @@ def get_adb_scripts():
         return scripts
     except Exception as e:
         print(f"[DB] ADB script fetch error: {e}")
+        return []
+
+# Camera Management
+def add_camera_db(device_id: str, name: str, type: str, ip: str, username: str = "", password: str = "", port: int = 554, stream_quality: str = "stream1", vflip: bool = False):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            '''INSERT OR REPLACE INTO cameras 
+               (device_id, name, type, ip, username, password, port, stream_quality, vflip) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+            (device_id, name, type, ip, username, password, port, stream_quality, vflip)
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[DB] Add camera error: {e}")
+
+def delete_camera_db(device_id: str):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM cameras WHERE device_id = ?", (device_id,))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[DB] Delete camera error: {e}")
+
+def get_cameras_db():
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM cameras")
+        rows = cursor.fetchall()
+        cameras = []
+        for row in rows:
+            cameras.append({
+                "device_id": row["device_id"],
+                "name": row["name"],
+                "type": row["type"],
+                "ip": row["ip"],
+                "username": row["username"],
+                "password": row["password"],
+                "port": row["port"],
+                "stream_quality": row["stream_quality"],
+                "vflip": bool(row["vflip"])
+            })
+        conn.close()
+        return cameras
+    except Exception as e:
+        print(f"[DB] Get cameras error: {e}")
         return []

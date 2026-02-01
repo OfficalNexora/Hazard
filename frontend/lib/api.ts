@@ -188,14 +188,75 @@ export async function classifyWorker(deviceId: string, classification: string): 
     return res.json();
 }
 
-export async function registerCamera(deviceId: string, ip: string): Promise<{ status: string }> {
+// Scan for cameras on local network
+export async function discoverCameras(): Promise<{ ip: string, model: string }[]> {
+    const res = await fetch(`${API_BASE_URL}/api/cameras/discover`);
+    if (!res.ok) throw new Error('Discovery failed');
+    const data = await res.json();
+    return data.cameras;
+}
+
+// Scan for RTSP/CCTV cameras on common ports
+export async function discoverRtspCameras(): Promise<{ ip: string, ports: number[], type: string, suggested_port: number }[]> {
+    const res = await fetch(`${API_BASE_URL}/api/cameras/discover_rtsp`);
+    if (!res.ok) throw new Error('RTSP Discovery failed');
+    const data = await res.json();
+    return data.cameras;
+}
+
+export async function registerCamera(device_id: string, ip: string, vflip: boolean = false): Promise<any> {
     const res = await fetch(`${API_BASE_URL}/api/cameras/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ device_id: deviceId, ip }),
+        body: JSON.stringify({ device_id, ip, vflip }),
     });
-    if (!res.ok) throw new Error('Failed to register camera');
+    if (!res.ok) throw new Error('Camera registration failed');
     return res.json();
+}
+
+// Register a Tapo camera with credential validation
+export async function registerTapoCamera(
+    device_id: string,
+    ip: string,
+    username: string,
+    password: string,
+    stream_quality: string = "stream1",
+    vflip: boolean = false
+): Promise<{ status: string; message: string; device_id: string }> {
+    const res = await fetch(`${API_BASE_URL}/api/cameras/register_tapo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_id, ip, username, password, stream_quality, vflip }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+        // Extract error message from response
+        throw new Error(data.detail || 'Camera registration failed');
+    }
+
+    return data;
+}
+
+// Delete camera
+export async function deleteCamera(device_id: string): Promise<any> {
+    const res = await fetch(`${API_BASE_URL}/api/cameras/${device_id}`, {
+        method: 'DELETE',
+    });
+    if (!res.ok) throw new Error('Camera deletion failed');
+    return res.json();
+}
+
+// Move camera (PTZ)
+export async function moveCamera(device_id: string, pan: number, tilt: number): Promise<any> {
+    const res = await fetch(`${API_BASE_URL}/api/cameras/ptz/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_id, pan, tilt }),
+    });
+    if (!res.ok) throw new Error('PTZ move failed');
+    return res.json(); // Returns { status, message, new_position }
 }
 
 export async function sendSMS(number: string, message: string): Promise<{ status: string }> {
@@ -380,4 +441,11 @@ export function connectWebSocket(): void {
 
 export function disconnectWebSocket(): void {
     getWebSocketManager().disconnect();
+}
+
+export async function fetchWeather(lat?: number, lon?: number): Promise<any> {
+    const query = lat && lon ? `?lat=${lat}&lon=${lon}` : '';
+    const res = await fetch(`${API_BASE_URL}/api/weather${query}`);
+    if (!res.ok) throw new Error('Failed to fetch weather');
+    return res.json();
 }

@@ -72,24 +72,53 @@ class VisionWorker:
             print(f"[VisionWorker] FAILED to load model: {e}")
 
     def add_camera(self, device_id: str, source: str, vflip: bool = False, hflip: bool = False):
-        """Add a new camera source (Serial PORT or HTTP URL)
+        """Add a new camera source (Serial PORT, HTTP URL, or RTSP)
         
         Args:
             device_id: Unique camera identifier
-            source: Serial port (COM3) or HTTP stream URL
+            source: Serial port (COM3), HTTP stream URL, or RTSP URL
             vflip: Flip video vertically (for upside-down cameras)
             hflip: Flip video horizontally (mirror)
         """
         print(f"[VisionWorker] Adding camera {device_id} at {source} (vflip={vflip})")
+        
+        # For RTSP streams, use FFmpeg streamer (more reliable)
+        if source.startswith("rtsp://"):
+            print(f"[VisionWorker] Using FFmpeg subprocess for RTSP stream")
+            from ffmpeg_streamer import get_streamer
+            streamer = get_streamer()
+            
+            # Callback to store frames in last_frames dict
+            def on_frame(stream_id, frame):
+                if vflip:
+                    frame = cv2.flip(frame, 0)
+                if hflip:
+                    frame = cv2.flip(frame, 1)
+                _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                self.last_frames[stream_id] = buffer.tobytes()
+            
+            streamer.add_stream(device_id, source, frame_callback=on_frame)
+            self.streams[device_id] = {
+                "source": source,
+                "active": True,
+                "vflip": vflip,
+                "hflip": hflip,
+                "uses_ffmpeg": True
+            }
+            return
+        
+        # For non-RTSP (ESP32-CAM HTTP, Serial), use original method
         self.streams[device_id] = {
             "source": source,
             "active": True,
             "vflip": vflip,
-            "hflip": hflip
+            "hflip": hflip,
+            "uses_ffmpeg": False
         }
         thread = threading.Thread(target=self._camera_loop, args=(device_id,), daemon=True)
         self.threads.append(thread)
         thread.start()
+
 
     def _camera_loop(self, device_id: str):
         """Dedicated loop for a single camera source"""
@@ -100,7 +129,42 @@ class VisionWorker:
         
         cap = None
         if not is_serial:
-            cap = cv2.VideoCapture(source)
+            print(f"[VisionWorker] Opening network stream: {source}")
+            
+            # Configure RTSP for TCP transport + timeout
+            if source.startswith("rtsp://"):
+                import os
+                # CRITICAL: These settings fix most RTSP connection issues
+                # stimeout = socket timeout in microseconds (5 seconds)
+                os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|stimeout;5000000"
+                print(f"[VisionWorker] RTSP: TCP transport, 5s timeout")
+            
+            # Retry loop for RTSP connections
+            max_retries = 3
+            for attempt in range(max_retries):
+                cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Low buffer for latency
+                
+                if cap.isOpened():
+                    # Test read to verify stream works
+                    ret, test_frame = cap.read()
+                    if ret and test_frame is not None:
+                        print(f"[VisionWorker] SUCCESS: {source} (attempt {attempt+1})")
+                        break
+                    else:
+                        print(f"[VisionWorker] Connected but no frames (attempt {attempt+1})")
+                        cap.release()
+                else:
+                    print(f"[VisionWorker] Connection failed (attempt {attempt+1}/{max_retries})")
+                
+                time.sleep(2)
+            
+            if not cap or not cap.isOpened():
+                print(f"[VisionWorker] CRITICAL: Cannot open stream {source}")
+                print(f"[VisionWorker] Test URL in VLC: {source}")
+                print(f"[VisionWorker] Check: RTSP enabled? Credentials correct?")
+                self.streams[device_id]["active"] = False
+                return
         
         frame_count = 0
         while self.running and self.streams[device_id]["active"]:
@@ -114,9 +178,12 @@ class VisionWorker:
             else:
                 ret, frame = cap.read()
                 if not ret:
-                    print(f"[VisionWorker] Stream {device_id} lost. Retrying...")
+                    print(f"[VisionWorker] Stream {device_id} lost. Retrying with FFMPEG...")
                     time.sleep(2)
-                    cap.open(source)
+                    cap.release()
+                    cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
+                    if not cap.isOpened():
+                        print(f"[VisionWorker] Retry failed for {source}")
                     continue
                 
                 # Apply camera transforms if configured

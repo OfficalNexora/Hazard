@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 import uvicorn
-from database import init_db, get_history, load_config, save_config, add_adb_script, delete_adb_script, get_adb_scripts
+from database import init_db, get_history, load_config, save_config, add_adb_script, delete_adb_script, get_adb_scripts, add_camera_db, delete_camera_db, get_cameras_db
 
 from state_manager import state, AlertState
 from sensor_worker import init_sensor_worker, get_sensor_worker
@@ -160,6 +160,51 @@ async def lifespan(app: FastAPI):
             state.add_gsm_contact(mode, contact["number"], contact["name"], contact["message"], contact.get("category", "general"))
     
     print("[Server] Workers started")
+
+    # Load persisted cameras
+    try:
+        saved_cameras = get_cameras_db()
+        vision = get_vision_worker()
+        
+        # Load Tapo Manager if needed
+        tapo_manager = None
+        try:
+            from tapo_manager import get_tapo_manager
+            tapo_manager = get_tapo_manager()
+        except ImportError:
+            pass
+
+        print(f"[Server] Loading {len(saved_cameras)} cameras from database...")
+        
+        for cam in saved_cameras:
+            try:
+                if cam["type"] == "tapo" and tapo_manager:
+                     # Re-add Tapo camera using saved credentials
+                     print(f"[Server] Restoring Tapo camera: {cam['device_id']}")
+                     tapo_manager.add_camera(
+                        cam['device_id'], 
+                        cam['ip'], 
+                        cam['username'], 
+                        cam['password'],
+                        cam['stream_quality']
+                     )
+                     state.update_device(cam['device_id'], "camera", True, cam['ip'])
+                     
+                elif vision:
+                    # Re-add generic RTSP/HTTP camera
+                    if cam['ip'].startswith("rtsp://"):
+                        source = cam['ip']
+                    else:
+                        source = f"http://{cam['ip']}:81/stream"
+                    
+                    print(f"[Server] Restoring Generic camera: {cam['device_id']}")
+                    vision.add_camera(cam['device_id'], source, vflip=cam['vflip'])
+                    state.update_device(cam['device_id'], "camera", True, cam['ip'])
+            except Exception as e:
+                print(f"[Server] Failed to restore camera {cam['device_id']}: {e}")
+                
+    except Exception as e:
+        print(f"[Server] Error loading cameras on startup: {e}")
     
     yield
     
@@ -209,6 +254,9 @@ class CameraRequest(BaseModel):
     ip: str
     vflip: bool = False  # Flip vertically (for upside-down cameras)
     hflip: bool = False  # Flip horizontally (mirror)
+    username: str = ""   # For ONVIF/RTSP authentication
+    password: str = ""   # For ONVIF/RTSP authentication
+    port: int = 554      # ONVIF port (default 554)
 
 class AlertRequest(BaseModel):
     alert: int
@@ -486,14 +534,29 @@ async def update_settings(config: dict):
 
 @app.get("/api/video_feed")
 async def video_feed(id: str = "esp32_cam_0"):
-    """MJPEG Video streaming relay for multiple cameras"""
+    """MJPEG Video streaming relay for multiple cameras (VisionWorker + TapoCameraManager)"""
     vision = get_vision_worker()
-    if not vision:
-        raise HTTPException(status_code=503, detail="Vision worker not available")
+    
+    # Also try to get TapoCameraManager
+    tapo_manager = None
+    try:
+        from tapo_manager import get_tapo_manager
+        tapo_manager = get_tapo_manager()
+    except ImportError:
+        pass
 
     def generate():
         while True:
-            frame = vision.last_frames.get(id)
+            frame = None
+            
+            # First check VisionWorker
+            if vision:
+                frame = vision.last_frames.get(id)
+            
+            # If not found, check TapoCameraManager
+            if not frame and tapo_manager:
+                frame = tapo_manager.get_frame(id)
+            
             if frame:
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
@@ -504,14 +567,300 @@ async def video_feed(id: str = "esp32_cam_0"):
 
 @app.post("/api/cameras/register")
 async def register_camera(req: CameraRequest):
-    """Register a new WiFi camera"""
+    """Register a new WiFi camera or RTSP stream"""
     vision = get_vision_worker()
     if vision:
-        source = f"http://{req.ip}:81/stream"
+        # Check if this is an RTSP URL or IP camera
+        if req.ip.startswith("rtsp://"):
+            source = req.ip  # Already a full RTSP URL
+        else:
+            source = f"http://{req.ip}:81/stream"  # ESP32-CAM default
+        
         vision.add_camera(req.device_id, source, vflip=req.vflip, hflip=req.hflip)
-        state.update_device(req.device_id, "esp32_cam", True, req.ip)
-        return {"status": "success", "device_id": req.device_id, "vflip": req.vflip}
+        
+        # Save to DB
+        add_camera_db(
+            device_id=req.device_id,
+            name=req.device_id,
+            type="generic",
+            ip=req.ip,
+            vflip=req.vflip
+        )
+        
+        state.update_device(req.device_id, "camera", True, req.ip)
+        return {"status": "success", "device_id": req.device_id, "source": source}
     raise HTTPException(status_code=503, detail="Vision worker not available")
+
+
+@app.get("/api/cameras/debug")
+async def debug_cameras():
+    """Debug endpoint to view active camera streams"""
+    vision = get_vision_worker()
+    if vision:
+        streams = {}
+        for device_id, stream_info in vision.streams.items():
+            streams[device_id] = {
+                "source": stream_info.get("source"),
+                "active": stream_info.get("active"),
+                "has_frame": device_id in vision.last_frames
+            }
+        return {"streams": streams, "total": len(streams)}
+    return {"streams": {}, "error": "Vision worker not available"}
+
+
+class TapoRegisterRequest(BaseModel):
+    """Request model for Tapo camera registration"""
+    device_id: str
+    ip: str
+    username: str
+    password: str
+    stream_quality: str = "stream1"  # stream1 (HD) or stream2 (SD)
+    vflip: bool = False
+
+
+class PTZRequest(BaseModel):
+    """Request model for PTZ control"""
+    device_id: str
+    pan: float = 0.0  # -1.0 to 1.0
+    tilt: float = 0.0 # -1.0 to 1.0
+
+
+@app.post("/api/cameras/ptz/move")
+async def move_ptz(req: PTZRequest):
+    """Control camera Pan/Tilt via ONVIF (Incremental)"""
+    try:
+        from tapo_manager import get_tapo_manager
+        manager = get_tapo_manager()
+        
+        # Use incremental step movement
+        # Pan/Tilt values in req are now treated as steps (e.g., 0.1, -0.1)
+        # Frontend should send small values
+        success, msg, status = manager.move_motor_step(req.device_id, req.pan, req.tilt)
+        
+        if success:
+            return {
+                "status": "success", 
+                "message": msg,
+                "new_position": status  # {'pan': x, 'tilt': y, 'zoom': z}
+            }
+        else:
+            raise HTTPException(status_code=400, detail=msg)
+            
+    except ImportError:
+         raise HTTPException(status_code=503, detail="Tapo manager not available")
+    except Exception as e:
+         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/cameras/register_tapo")
+async def register_tapo_camera(req: TapoRegisterRequest):
+    """
+    Register a Tapo camera with credential validation.
+    Uses official pytapo library to verify connection before streaming.
+    Returns detailed error messages for incorrect credentials.
+    """
+    try:
+        from tapo_manager import get_tapo_manager
+        
+        manager = get_tapo_manager()
+        success, message = manager.add_camera(
+            camera_id=req.device_id,
+            ip=req.ip,
+            username=req.username,
+            password=req.password,
+            stream_quality=req.stream_quality
+        )
+        
+        if success:
+            # Save to DB
+            add_camera_db(
+                device_id=req.device_id,
+                name=req.device_id,
+                type="tapo",
+                ip=req.ip,
+                username=req.username,
+                password=req.password,
+                stream_quality=req.stream_quality,
+                vflip=req.vflip
+            )
+            
+            # Also register with state manager for device list
+            state.update_device(req.device_id, "camera", True, req.ip)
+            return {"status": "success", "message": message, "device_id": req.device_id}
+        else:
+            # Return validation error with details
+            raise HTTPException(status_code=400, detail=message)
+            
+    except ImportError:
+        raise HTTPException(status_code=500, detail="pytapo library not installed. Run: pip install pytapo")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+
+@app.delete("/api/cameras/{device_id}")
+async def delete_camera(device_id: str):
+    """Delete a camera from the system and database"""
+    
+    # 1. Remove from database
+    delete_camera_db(device_id)
+    
+    # 2. Remove from Tapo Manager
+    try:
+        from tapo_manager import get_tapo_manager
+        get_tapo_manager().remove_camera(device_id)
+    except:
+        pass
+        
+    # 3. Remove from Vision Worker (Generic/RTSP)
+    vision = get_vision_worker()
+    if vision and device_id in vision.streams:
+        del vision.streams[device_id]
+        if device_id in vision.last_frames:
+            del vision.last_frames[device_id]
+            
+    # 4. Remove from State Manager
+    state.remove_device(device_id)
+    
+    return {"status": "success", "message": f"Camera {device_id} deleted"}
+
+
+@app.get("/api/cameras/discover")
+async def discover_cameras():
+    """
+    Scan local network for ESP32-CAM devices (Port 81).
+    This is a quick aggressive scan of the local subnet.
+    """
+    import socket
+    import asyncio
+    
+    # 1. Determine Local Subnet
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # Connect to a public DNS to get the correct outbound interface IP
+        s.connect(("8.8.8.8", 80))
+        local_ip = s.getsockname()[0]
+    except:
+        local_ip = "127.0.0.1"
+    finally:
+        s.close()
+
+    if local_ip == "127.0.0.1":
+        return {"cameras": [], "subnet": "unknown"}
+
+    subnet_base = ".".join(local_ip.split(".")[:3])
+    print(f"[Discovery] Scanning subnet: {subnet_base}.x")
+
+    found_cameras = []
+
+    # 2. Async Port Scanner
+    async def check_ip(ip):
+        try:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(ip, 81), 
+                timeout=0.2  # Short timeout for speed
+            )
+            writer.close()
+            await writer.wait_closed()
+            return ip
+        except:
+            return None
+
+    # 3. Launch scans for .2 to .254
+    tasks = []
+    for i in range(2, 255):
+        ip = f"{subnet_base}.{i}"
+        if ip != local_ip:
+            tasks.append(check_ip(ip))
+    
+    # 4. Gather results
+    results = await asyncio.gather(*tasks)
+    
+    for ip in results:
+        if ip:
+            found_cameras.append({"ip": ip, "model": "ESP32-CAM"})
+            
+    print(f"[Discovery] Found {len(found_cameras)} cameras")
+    return {"cameras": found_cameras, "subnet": f"{subnet_base}.x"}
+
+
+@app.get("/api/cameras/discover_rtsp")
+async def discover_rtsp():
+    """
+    Scan local network for RTSP/CCTV devices on common ports (554, 8554, 80).
+    Returns detected devices with their open ports.
+    """
+    import socket
+    import asyncio
+    
+    # Get local subnet
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        local_ip = s.getsockname()[0]
+    except:
+        local_ip = "127.0.0.1"
+    finally:
+        s.close()
+
+    if local_ip == "127.0.0.1":
+        return {"cameras": [], "subnet": "unknown"}
+
+    subnet_base = ".".join(local_ip.split(".")[:3])
+    print(f"[RTSP Discovery] Scanning subnet: {subnet_base}.x for CCTV/RTSP devices")
+
+    found_cameras = []
+    rtsp_ports = [554, 8554, 80, 8080]  # Common RTSP and ONVIF ports
+
+    async def check_ip_port(ip, port):
+        try:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(ip, port), 
+                timeout=0.3
+            )
+            writer.close()
+            await writer.wait_closed()
+            return (ip, port)
+        except:
+            return None
+
+    # Scan all IPs on all RTSP ports
+    tasks = []
+    for i in range(2, 255):
+        ip = f"{subnet_base}.{i}"
+        if ip != local_ip:
+            for port in rtsp_ports:
+                tasks.append(check_ip_port(ip, port))
+    
+    results = await asyncio.gather(*tasks)
+    
+    # Group by IP
+    ip_ports = {}
+    for result in results:
+        if result:
+            ip, port = result
+            if ip not in ip_ports:
+                ip_ports[ip] = []
+            ip_ports[ip].append(port)
+    
+    # Build response
+    for ip, ports in ip_ports.items():
+        camera_type = "CCTV/IP Camera"
+        if 554 in ports:
+            camera_type = "RTSP Camera"
+        elif 80 in ports or 8080 in ports:
+            camera_type = "Network Camera"
+        
+        found_cameras.append({
+            "ip": ip,
+            "ports": ports,
+            "type": camera_type,
+            "suggested_port": 554 if 554 in ports else ports[0]
+        })
+            
+    print(f"[RTSP Discovery] Found {len(found_cameras)} potential CCTV devices")
+    return {"cameras": found_cameras, "subnet": f"{subnet_base}.x"}
 
 
 # ============================================================================
@@ -590,10 +939,82 @@ async def test_hardware_trigger(alert_level: int = 4):
         msg = contact.get("message", "WARNING: Simulated Hazard Alert! Please evacuate immediately.")
         print(f"[TEST] Broadcasting to {contact['number']}")
         # Fire and forget task to not block response
-        asyncio.create_task(sender.send_sms(contact["number"], msg))
+        asyncio.create_task(sensor_worker.send_sms(contact["number"], msg) if sensor_worker else None)
         count += 1
         
     return {"status": "triggered", "recipients_notified": count}
+
+
+@app.get("/api/weather")
+async def get_weather(lat: float = 14.5995, lon: float = 120.9842):
+    """
+    Get weather forecast and generate hazard warnings.
+    Defaults to Manila coordinates (since user seems to be in PH/UTC+8).
+    """
+    import httpx
+    
+    url = "https://api.open-meteo.com/v1/forecast"
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "current": ["temperature_2m", "relative_humidity_2m", "is_day", "rain", "showers", "wind_speed_10m"],
+        "hourly": ["temperature_2m", "rain", "wind_speed_10m"],
+        "forecast_days": 1
+    }
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, params=params, timeout=5.0)
+            data = response.json()
+            
+        if "error" in data:
+            raise Exception(data["reason"])
+            
+        # Analysis for Warnings
+        warnings = []
+        
+        current = data.get("current", {})
+        hourly = data.get("hourly", {})
+        
+        # 1. Heat Warning (>35C)
+        max_temp = max(hourly.get("temperature_2m", [0]))
+        if max_temp > 35:
+            warnings.append({
+                "type": "heat",
+                "level": "warning" if max_temp < 40 else "danger",
+                "message": f"Extreme heat expected! Peak: {max_temp}°C",
+                "icon": "thermometer"
+            })
+            
+        # 2. Rain Warning (>5mm/hr is heavy)
+        max_rain = max(hourly.get("rain", [0]))
+        if max_rain > 5:
+            warnings.append({
+                "type": "rain",
+                "level": "warning" if max_rain < 15 else "danger",
+                "message": f"Heavy rain detected! Peak: {max_rain} mm/h",
+                "icon": "cloud-rain"
+            })
+            
+        # 3. Wind Warning (>40km/h)
+        max_wind = max(hourly.get("wind_speed_10m", [0]))
+        if max_wind > 40:
+            warnings.append({
+                "type": "wind",
+                "level": "warning" if max_wind < 80 else "danger",
+                "message": f"Strong winds expected! Peak: {max_wind} km/h",
+                "icon": "wind"
+            })
+            
+        return {
+            "current": current,
+            "warnings": warnings,
+            "location": {"lat": lat, "lon": lon}
+        }
+        
+    except Exception as e:
+        print(f"[Weather] Error: {e}")
+        raise HTTPException(status_code=503, detail="Weather service unavailable")
 
 
 @app.get("/api/events/active")
@@ -696,6 +1117,51 @@ async def calibrate_camera(points: List[dict]):
         return {"status": "success", "points": len(calibration)}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# ============================================================================
+# PTZ CAMERA CONTROL ENDPOINTS
+# ============================================================================
+
+class PTZRequest(BaseModel):
+    camera_id: str
+    direction: str  # 'up', 'down', 'left', 'right', 'zoom_in', 'zoom_out', 'stop'
+    speed: float = 0.5
+
+
+class PTZConnectRequest(BaseModel):
+    camera_id: str
+    ip: str
+    port: int = 80
+    username: str
+    password: str
+
+
+@app.post("/api/cameras/ptz/connect")
+async def ptz_connect(req: PTZConnectRequest):
+    """Connect to ONVIF camera for PTZ control"""
+    from ptz_manager import get_ptz_manager
+    ptz = get_ptz_manager()
+    
+    if ptz.connect(req.camera_id, req.ip, req.port, req.username, req.password):
+        return {"status": "connected", "camera_id": req.camera_id}
+    raise HTTPException(status_code=503, detail="Failed to connect to ONVIF camera")
+
+
+@app.post("/api/cameras/ptz/move")
+async def ptz_move(req: PTZRequest):
+    """Control PTZ camera movement"""
+    from ptz_manager import get_ptz_manager
+    ptz = get_ptz_manager()
+    
+    if req.direction == "stop":
+        if ptz.stop(req.camera_id):
+            return {"status": "stopped"}
+    else:
+        if ptz.move(req.camera_id, req.direction, req.speed):
+            return {"status": "moving", "direction": req.direction}
+    
+    raise HTTPException(status_code=400, detail="PTZ command failed")
 
 
 # ============================================================================

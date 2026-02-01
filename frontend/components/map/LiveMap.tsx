@@ -66,35 +66,43 @@ export default function LiveMap() {
     const [position, setPosition] = useState<[number, number] | null>(null);
     const [accuracy, setAccuracy] = useState<number>(0);
     const [error, setError] = useState<string | null>(null);
+    const [weather, setWeather] = useState<any>(null);
 
     const devices = useDevices();
     const detections = useDetections(10);
 
+    // Geolocation tracking
     useEffect(() => {
         if (!navigator.geolocation) {
-            setError("Geolocation is not supported by your browser");
+            setError("Geolocation not supported");
             return;
         }
 
         const watchId = navigator.geolocation.watchPosition(
             (pos) => {
-                const { latitude, longitude, accuracy } = pos.coords;
-                setPosition([latitude, longitude]);
-                setAccuracy(accuracy);
+                setPosition([pos.coords.latitude, pos.coords.longitude]);
+                setAccuracy(pos.coords.accuracy);
                 setError(null);
             },
             (err) => {
                 setError(err.message);
             },
-            {
-                enableHighAccuracy: true,
-                timeout: 20000,
-                maximumAge: 0,
-            }
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
         );
 
         return () => navigator.geolocation.clearWatch(watchId);
     }, []);
+
+    // Fetch weather when position is found
+    useEffect(() => {
+        if (position) {
+            import("@/lib/api").then(api => {
+                api.fetchWeather(position[0], position[1]).then(data => {
+                    setWeather(data);
+                }).catch(e => console.error("Weather map fetch failed", e));
+            });
+        }
+    }, [position]);
 
     if (error) {
         return (
@@ -120,62 +128,106 @@ export default function LiveMap() {
     }
 
     return (
-        <MapContainer
-            center={position}
-            zoom={16}
-            scrollWheelZoom={true}
-            className="h-full w-full rounded-xl border border-border shadow-sm z-0"
-        >
-            <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-                url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-            />
+        <div className="relative h-full w-full">
+            <MapContainer
+                center={position}
+                zoom={16}
+                scrollWheelZoom={true}
+                className="h-full w-full rounded-xl border border-border shadow-sm z-0"
+            >
+                <TileLayer
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+                    url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                />
 
-            {/* Base Station */}
-            <Marker position={position} icon={pulseIcon}>
-                <Popup>
-                    <div className="text-center">
-                        <strong className="block text-primary">MONITORING STATION</strong>
-                        <span className="text-xs text-muted-foreground">Main Control Unit</span>
+                {/* Base Station */}
+                <Marker position={position} icon={pulseIcon}>
+                    <Popup>
+                        <div className="text-center">
+                            <strong className="block text-primary">MONITORING STATION</strong>
+                            <span className="text-xs text-muted-foreground">Main Control Unit</span>
+                            {weather && (
+                                <div className="mt-2 pt-2 border-t border-dashed">
+                                    <div className="flex items-center gap-1 justify-center">
+                                        <span className="text-lg font-bold">{weather.current.temperature_2m}°C</span>
+                                    </div>
+                                    <span className="text-[10px] text-muted-foreground">
+                                        Wind: {weather.current.wind_speed_10m} km/h
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                    </Popup>
+                </Marker>
+
+                {/* Connected Devices (Simulated Position for Demo) */}
+                {devices.filter(d => d.connected).map((device, i) => (
+                    <Marker
+                        key={device.device_id}
+                        position={[position[0] + 0.001 * (i + 1), position[1] + 0.001 * (i % 2 === 0 ? 1 : -1)]}
+                        icon={deviceIcon}
+                    >
+                        <Popup>
+                            <div className="text-xs">
+                                <strong className="block text-emerald-500">{device.device_id.toUpperCase()}</strong>
+                                <span>Type: {device.device_type}</span><br />
+                                <span>Port: {device.port}</span>
+                            </div>
+                        </Popup>
+                    </Marker>
+                ))}
+
+                {/* Hazards (Simulated around station) */}
+                {detections.slice(0, 5).map((det, i) => (
+                    <Marker
+                        key={`det-${i}`}
+                        position={[position[0] + 0.0005 * (i + 2), position[1] + 0.0008 * (i % 3 === 0 ? -1 : 1)]}
+                        icon={hazardIcon}
+                    >
+                        <Popup>
+                            <div className="text-xs">
+                                <strong className="block text-red-500">HAZARD: {det.class.toUpperCase()}</strong>
+                                <span>Confidence: {(det.confidence * 100).toFixed(1)}%</span><br />
+                                <span>Timestamp: {new Date().toLocaleTimeString()}</span>
+                            </div>
+                        </Popup>
+                    </Marker>
+                ))}
+
+                <MapController center={position} />
+            </MapContainer>
+
+            {/* Weather Overlay Widget */}
+            {weather && (
+                <div className="absolute top-4 right-4 z-[400] bg-black/80 backdrop-blur-md border border-white/10 rounded-lg p-3 shadow-2xl animate-in slide-in-from-right-10">
+                    <div className="flex items-center gap-3">
+                        <div className="flex flex-col">
+                            <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Local Weather</span>
+                            <div className="flex items-baseline gap-1">
+                                <span className="text-2xl font-bold text-white">{weather.current.temperature_2m}°</span>
+                                <span className="text-xs text-muted-foreground">C</span>
+                            </div>
+                        </div>
+                        {/* Simple Icon based on conditions */}
+                        <div className="h-8 w-8 rounded-full bg-blue-500/20 flex items-center justify-center">
+                            {weather.current.rain > 0 ? (
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                                </svg>
+                            ) : (
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                                </svg>
+                            )}
+                        </div>
                     </div>
-                </Popup>
-            </Marker>
-
-            {/* Connected Devices (Simulated Position for Demo) */}
-            {devices.filter(d => d.connected).map((device, i) => (
-                <Marker
-                    key={device.device_id}
-                    position={[position[0] + 0.001 * (i + 1), position[1] + 0.001 * (i % 2 === 0 ? 1 : -1)]}
-                    icon={deviceIcon}
-                >
-                    <Popup>
-                        <div className="text-xs">
-                            <strong className="block text-emerald-500">{device.device_id.toUpperCase()}</strong>
-                            <span>Type: {device.device_type}</span><br />
-                            <span>Port: {device.port}</span>
+                    {weather.warnings.length > 0 && (
+                        <div className="mt-2 text-[9px] text-red-400 font-bold border-t border-white/5 pt-1 uppercase">
+                            ! {weather.warnings[0].message}
                         </div>
-                    </Popup>
-                </Marker>
-            ))}
-
-            {/* Hazards (Simulated around station) */}
-            {detections.slice(0, 5).map((det, i) => (
-                <Marker
-                    key={`det-${i}`}
-                    position={[position[0] + 0.0005 * (i + 2), position[1] + 0.0008 * (i % 3 === 0 ? -1 : 1)]}
-                    icon={hazardIcon}
-                >
-                    <Popup>
-                        <div className="text-xs">
-                            <strong className="block text-red-500">HAZARD: {det.class.toUpperCase()}</strong>
-                            <span>Confidence: {(det.confidence * 100).toFixed(1)}%</span><br />
-                            <span>Timestamp: {new Date().toLocaleTimeString()}</span>
-                        </div>
-                    </Popup>
-                </Marker>
-            ))}
-
-            <MapController center={position} />
-        </MapContainer>
+                    )}
+                </div>
+            )}
+        </div>
     );
 }
