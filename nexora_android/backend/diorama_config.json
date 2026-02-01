@@ -1,0 +1,330 @@
+{
+    "name": "MOD-EVAC Diorama",
+    "description": "Edit this file to match your physical diorama layout",
+    "scale": 0.01,
+    "units": "meters (0.01 = 1cm for diorama scale)",
+    "bounds": [
+        0,
+        0,
+        0,
+        0.30,
+        0.20,
+        0.06
+    ],
+    "buildings": [
+        {
+            "id": "A",
+            "name": "Building A",
+            "floors": 4,
+            "bounds": [
+                0.03,
+                0.02,
+                0,
+                0.12,
+                0.15,
+                0.06
+            ],
+            "zones": [
+                {
+                    "id": 1,
+                    "name": "A-Floor1",
+                    "floor": 1,
+                    "position": [
+                        0.075,
+                        0.085,
+                        0.0075
+                    ],
+                    "radius": 0.03,
+                    "led_indices": [
+                        3,
+                        4
+                    ],
+                    "danger_on_fire": true,
+                    "danger_on_flood": false,
+                    "danger_on_seismic": true
+                },
+                {
+                    "id": 2,
+                    "name": "A-Floor2",
+                    "floor": 2,
+                    "position": [
+                        0.075,
+                        0.085,
+                        0.0225
+                    ],
+                    "radius": 0.03,
+                    "led_indices": [
+                        5,
+                        6
+                    ],
+                    "danger_on_fire": true,
+                    "danger_on_flood": false,
+                    "danger_on_seismic": true
+                },
+                {
+                    "id": 6,
+                    "name": "A-Floor3",
+                    "floor": 3,
+                    "position": [
+                        0.075,
+                        0.085,
+                        0.0375
+                    ],
+                    "radius": 0.03,
+                    "led_indices": [
+                        7,
+                        8
+                    ],
+                    "danger_on_fire": true,
+                    "danger_on_flood": false,
+                    "danger_on_seismic": true
+                },
+                {
+                    "id": 7,
+                    "name": "A-Floor4",
+                    "floor": 4,
+                    "position": [
+                        0.075,
+                        0.085,
+                        0.0525
+                    ],
+                    "radius": 0.03,
+                    "led_indices": [
+                        9,
+                        10
+                    ],
+                    "danger_on_fire": true,
+                    "danger_on_flood": false,
+                    "danger_on_seismic": true
+                }
+            ]
+        },
+        {
+            "id": "B",
+            "name": "Building B",
+            "floors": 4,
+            "bounds": [
+                0.18,
+                0.02,
+                0,
+                0.27,
+                0.15,
+                0.06
+            ],
+            "zones": [
+                {
+                    "id": 4,
+                    "name": "B-Floor1",
+                    "floor": 1,
+                    "position": [
+                        0.225,
+                        0.085,
+                        0.0075
+                    ],
+                    "radius": 0.03,
+                    "led_indices": [
+                        13,
+                        14
+                    ],
+                    "danger_on_fire": false,
+                    "danger_on_flood": true,
+                    "danger_on_seismic": true
+                },
+                {
+                    "id": 5,
+                    "name": "B-Floor2",
+                    "floor": 2,
+                    "position": [
+                        0.225,
+                        0.085,
+                        0.0225
+                    ],
+                    "radius": 0.03,
+                    "led_indices": [
+                        15,
+                        16
+                    ],
+                    "danger_on_fire": true,
+                    "danger_on_flood": true,
+                    "danger_on_seismic": true
+                },
+                {
+                    "id": 8,
+                    "name": "B-Floor3",
+                    "floor": 3,
+                    "position": [
+                        0.225,
+                        0.085,
+                        0.0375
+                    ],
+                    "radius": 0.03,
+                    "led_indices": [
+                        17,
+                        18
+                    ],
+                    "danger_on_fire": false,
+                    "danger_on_flood": true,
+                    "danger_on_seismic": true
+                },
+                {
+                    "id": 9,
+                    "name": "B-Floor4",
+                    "floor": 4,
+                    "position": [
+                        0.225,
+                        0.085,
+                        0.0525
+                    ],
+                    "radius": 0.03,
+                    "led_indices": [
+                        19,
+                        20
+                    ],
+                    "danger_on_fire": false,
+                    "danger_on_flood": true,
+                    "danger_on_seismic": true
+                }
+            ]
+        }
+    ],
+    "exits": [
+        {
+            "id": 0,
+            "name": "Main Exit",
+            "position": [
+                0.0,
+                0.10,
+                0.0
+            ],
+            "radius": 0.02,
+            "led_indices": [
+                0,
+                1,
+                2
+            ]
+        },
+        {
+            "id": 3,
+            "name": "Secondary Exit",
+            "position": [
+                0.15,
+                0.0,
+                0.0
+            ],
+            "radius": 0.02,
+            "led_indices": [
+                11,
+                12
+            ]
+        }
+    ],
+    "cameras": [
+        {
+            "name": "Top Camera",
+            "position": [
+                0.15,
+                0.10,
+                0.25
+            ],
+            "direction": [
+                0,
+                0,
+                -1
+            ],
+            "fov_horizontal": 90,
+            "fov_vertical": 66,
+            "resolution": [
+                640,
+                480
+            ],
+            "calibration_points": []
+        }
+    ],
+    "zone_connections": {
+        "0": [
+            1
+        ],
+        "1": [
+            0,
+            2,
+            6
+        ],
+        "2": [
+            1,
+            6
+        ],
+        "3": [
+            4,
+            6,
+            7
+        ],
+        "4": [
+            3,
+            5,
+            8
+        ],
+        "5": [
+            4,
+            9
+        ],
+        "6": [
+            1,
+            2,
+            7
+        ],
+        "7": [
+            6,
+            3
+        ],
+        "8": [
+            4,
+            9
+        ],
+        "9": [
+            5,
+            8
+        ]
+    },
+    "sensors": {
+        "fire": {
+            "description": "IR Flame Sensor",
+            "position": [
+                0.075,
+                0.05,
+                0.0
+            ],
+            "affects_zones": [
+                1,
+                2,
+                6,
+                7
+            ],
+            "gpio_pin": 35
+        },
+        "rain": {
+            "description": "Rain/Flood Sensor",
+            "position": [
+                0.225,
+                0.05,
+                0.0
+            ],
+            "affects_zones": [
+                4,
+                5,
+                8,
+                9
+            ],
+            "gpio_pin": 34
+        },
+        "seismic": {
+            "description": "MPU6050 Accelerometer",
+            "position": [
+                0.15,
+                0.10,
+                0.0
+            ],
+            "affects_zones": "all",
+            "i2c_address": "0x68"
+        }
+    }
+}

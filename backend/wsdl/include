@@ -1,0 +1,11 @@
+<?xml version="1.0" ?>
+<xs:schema headers="yes" targetNamespace="http://www.w3.org/2004/08/xop/include" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xop="http://www.w3.org/2004/08/xop/include">
+  <xs:element name="Include" type="xop:Include"/>
+  <xs:complexType name="Include">
+    <xs:sequence>
+      <xs:any maxOccurs="unbounded" minOccurs="0" namespace="##any" processContents="lax"/>
+    </xs:sequence>
+    <xs:attribute name="href" type="xs:anyURI" use="required"/>
+    <xs:anyAttribute namespace="##other" processContents="lax"/>
+  </xs:complexType>
+</xs:schema>

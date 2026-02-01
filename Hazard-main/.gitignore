@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+dist_release/
+build/
+node_modules/
+.next/
+backend/static/
+backend/system.db
+*.pt
+downloads/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Environment Variables
+.env
+
+# YOLO / Dataset
+raw_data/
+
+# IDE
+.vscode/
+.idea/
+
+# AI
+AI/scripts/
+datasets/
+runs/
+

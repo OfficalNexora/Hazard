@@ -1,0 +1,7 @@
+flet
+fastapi
+uvicorn
+websockets
+numpy
+opencv-python
+# Excluded: ultralytics, pyserial

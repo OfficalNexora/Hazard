@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Communication | LOCAL-MONITOR</title>
+    <link rel="stylesheet" href="../css/style.css">
+    <style>
+        .contact-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+
+        .contact-table th, .contact-table td {
+            text-align: left;
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .contact-table th {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .category-badge {
+            padding: 0.2rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            background: rgba(255, 255, 255, 0.05);
+            text-transform: uppercase;
+        }
+
+        .btn-icon {
+            padding: 0.4rem;
+            line-height: 0;
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+        }
+
+        .btn-icon:hover {
+            color: var(--accent-critical);
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="sidebar">
+        <div class="brand">
+            <div style="width: 20px; height: 20px; background: var(--accent-success); border-radius: 50%;"></div>
+            LOCAL<span>MON</span>
+        </div>
+        <ul class="nav-links">
+            <li class="nav-item"><a href="dashboard.html"><span class="icon-nav" data-icon="dashboard"></span> Dashboard</a></li>
+            <li class="nav-item"><a href="cameras.html"><span class="icon-nav" data-icon="camera"></span> Cameras</a></li>
+            <li class="nav-item"><a href="map.html"><span class="icon-nav" data-icon="map"></span> Map</a></li>
+            <li class="nav-item"><a href="alerts.html"><span class="icon-nav" data-icon="alert"></span> Alerts</a></li>
+            <li class="nav-item"><a href="ai.html"><span class="icon-nav" data-icon="ai"></span> AI Analysis</a></li>
+            <li class="nav-item"><a href="communication.html"><span class="icon-nav" data-icon="message"></span> Communication</a></li>
+            <li class="nav-item"><a href="devices.html"><span class="icon-nav" data-icon="device"></span> Devices</a></li>
+            <li class="nav-item"><a href="settings.html"><span class="icon-nav" data-icon="settings"></span> Settings</a></li>
+        </ul>
+    </nav>
+
+    <main class="main-content" style="padding: 0; display: flex; flex-direction: column;">
+        <div class="top-bar">
+            <div class="system-mode">
+                <span style="width: 8px; height: 8px; background: currentColor; border-radius: 50%;"></span>
+                Local Monitor Mode
+            </div>
+            <div id="sys-time" class="system-time">--:--:--</div>
+        </div>
+
+        <div style="padding: 2rem; overflow-y: auto; flex: 1;">
+            <div class="page-header">
+                <div>
+                    <h1 class="page-title">Communication Hub</h1>
+                    <div class="text-muted text-sm">Emergency Recipient Management</div>
+                </div>
+                <button class="btn btn-primary" id="add-contact-btn">+ Add Contact</button>
+            </div>
+
+            <!-- Recipient Directory -->
+            <div class="card" style="margin-bottom: 2rem;">
+                <div class="card-header">
+                    <h3 class="card-title">Recipient Directory</h3>
+                </div>
+                <div class="card-body" style="padding: 0;">
+                    <table class="contact-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Number</th>
+                                <th>Mode</th>
+                                <th>Category</th>
+                                <th style="width: 50px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="contact-list">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Add Contact Modal (Simple Alert/Prompt for static site simplicity or hidden form) -->
+            <div id="add-modal" class="card" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; width: 400px; box-shadow: 0 0 50px rgba(0,0,0,0.5);">
+                <div class="card-header">
+                    <h3 class="card-title">Add Emergency Contact</h3>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label class="form-label">Full Name</label>
+                        <input type="text" id="new-name" class="form-control" placeholder="John Doe">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Phone Number</label>
+                        <input type="text" id="new-number" class="form-control" placeholder="+63...">
+                    </div>
+                    <div class="grid-2">
+                        <div class="form-group">
+                            <label class="form-label">Mode</label>
+                            <select id="new-mode" class="form-control">
+                                <option value="sms">SMS</option>
+                                <option value="call">Call</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Category</label>
+                            <select id="new-category" class="form-control">
+                                <option value="general">General</option>
+                                <option value="fire">Fire</option>
+                                <option value="flood">Flood</option>
+                                <option value="intrusion">Intrusion</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Custom Message</label>
+                        <input type="text" id="new-message" class="form-control" placeholder="Critical alert in building...">
+                    </div>
+                    <div class="flex-between" style="margin-top: 1rem;">
+                        <button class="btn btn-secondary" onclick="document.getElementById('add-modal').style.display='none'">Cancel</button>
+                        <button class="btn btn-primary" id="save-contact-btn">Save Contact</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="../js/main.js"></script>
+    <script src="../js/api.js"></script>
+    <script src="../js/icons.js"></script>
+    <script src="../js/communication.js"></script>
+</body>
+
+</html>
