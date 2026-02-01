@@ -89,72 +89,80 @@ class ADBWorker:
 
     def send_sms(self, phone: str, message: str, password: Optional[str] = None) -> bool:
         """
-        Edits the trigger_sms.bat file directly to set PHONE and MSG, then executes it.
-        This ensures we use the exact batch logic provided by the user.
+        Generates a unique batch file for each SMS and executes it in a new console.
+        Uses ADB + Termux SSH to send real SMS from an Android phone.
         """
-        bat_path = os.path.join(self.adb_dir, "trigger_sms.bat")
+        import uuid
+        
+        # Unique file in the ADB directory
+        temp_filename = f"sms_{uuid.uuid4().hex[:8]}.bat"
+        temp_bat_path = os.path.join(self.adb_dir, temp_filename)
+        
         password = password or self.default_pass
         
-        # Clean message for batch file (basic escaping)
-        safe_message = message.replace('"', '\\"')
+        # Escape quotes in message for batch file
+        safe_message = message.replace('"', "'")
         
-        # Detect correct user
-        correct_user = self.detect_termux_user() or "u0_a10443"
+        # Generate the batch file content using user's template
+        bat_content = f'''@echo off
+:: --- AUTO-GENERATED SMS SCRIPT ---
+SET PHONE={phone}
+SET MSG="{safe_message}"
+SET PASS={password}
+
+echo [1/3] Starting USB Tunnel...
+%~dp0adb.exe forward tcp:8022 tcp:8022
+
+echo [2/3] Detecting Phone User...
+for /f "tokens=*" %%i in ('%~dp0adb.exe shell whoami') do set USER=%%i
+
+echo [3/3] Sending SMS via %USER%...
+%~dp0sshpass.exe -p %PASS% ssh -p 8022 -o StrictHostKeyChecking=no %USER%@localhost "termux-sms-send -n %PHONE% %MSG%"
+
+if %ERRORLEVEL% EQU 0 (
+    echo.
+    echo SUCCESS: Message sent to {phone}
+) else (
+    echo.
+    echo FAILED: Check if sshd is running in Termux
+)
+
+timeout /t 3 >nul
+'''
         
         try:
-            # 1. Read existing content
-            with open(bat_path, "r") as f:
-                lines = f.readlines()
-            
-            # 2. Update configuration lines
-            new_lines = []
-            # Ensure SSH is in PATH for the batch execution
-            new_lines.append("SET PATH=%PATH%;C:\\Windows\\System32\\OpenSSH\n")
-            
-            for line in lines:
-                strip_line = line.strip()
-                if strip_line.startswith("SET PHONE="):
-                    new_lines.append(f"SET PHONE={phone}\n")
-                elif strip_line.startswith("SET MSG="):
-                    new_lines.append(f"SET MSG=\"{safe_message}\"\n")
-                elif strip_line.startswith("SET PASS="):
-                     new_lines.append(f"SET PASS={password}\n")
-                elif "adb.exe shell whoami" in line:
-                    # Override the auto-detection line with the correct user
-                    new_lines.append(f":: Auto-detection replaced by worker\n")
-                    new_lines.append(f"SET USER={correct_user}\n")
-                elif "sshpass.exe" in line:
-                    # Ensure 127.0.0.1 and verbose
-                    safe_line = line.replace("localhost", "127.0.0.1")
-                    safe_line = safe_line.replace("sshpass.exe -p", "sshpass.exe -v -p")
-                    new_lines.append(safe_line)
-                else:
-                    new_lines.append(line)
-            
-            
-            # 3. Write back changes
-            with open(bat_path, "w") as f:
-                f.writelines(new_lines)
+            # Write the batch file
+            with open(temp_bat_path, "w") as f:
+                f.write(bat_content)
                 
-            print(f"[ADBWorker] Updated {bat_path} with Phone={phone}")
+            print(f"[ADBWorker] Created batch: {temp_filename} for {phone}")
             
-            # 4. Execute the batch file
-            # Use CREATE_NEW_CONSOLE to ensure sshpass has a valid console to interact with
-            # This mimics the user running the batch file manually
-            print("[ADBWorker] Executing batch file in new console...")
-            p = subprocess.Popen([bat_path], cwd=self.adb_dir, creationflags=subprocess.CREATE_NEW_CONSOLE)
+            # Execute in new console window (visible to user)
+            print(f"[ADBWorker] Executing SMS to {phone}...")
+            p = subprocess.Popen(
+                [temp_bat_path], 
+                cwd=self.adb_dir, 
+                creationflags=subprocess.CREATE_NEW_CONSOLE
+            )
             p.wait()
             
             if p.returncode == 0:
-                print("[ADBWorker] SMS Batch Executed Successfully")
+                print(f"[ADBWorker] SMS to {phone} completed successfully")
                 return True
             else:
-                print(f"[ADBWorker] SMS Batch Failed (Code {p.returncode})")
+                print(f"[ADBWorker] SMS to {phone} failed (code {p.returncode})")
                 return False
 
         except Exception as e:
             print(f"[ADBWorker] Exception sending SMS: {e}")
             return False
+        finally:
+            # Cleanup temp file
+            if os.path.exists(temp_bat_path):
+                try:
+                    os.remove(temp_bat_path)
+                except:
+                    pass
 
     def make_call(self, phone: str, password: Optional[str] = None) -> bool:
         user = self.detect_termux_user()

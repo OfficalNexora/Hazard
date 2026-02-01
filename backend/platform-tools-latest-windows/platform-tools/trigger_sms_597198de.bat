@@ -3,11 +3,12 @@ SET PATH=%PATH%;C:\Windows\System32\OpenSSH
 SET PATH=%PATH%;C:\Windows\System32\OpenSSH
 SET PATH=%PATH%;C:\Windows\System32\OpenSSH
 SET PATH=%PATH%;C:\Windows\System32\OpenSSH
+SET PATH=%PATH%;C:\Windows\System32\OpenSSH
 @echo off
 :: --- CONFIGURATION ---
 :: Enter the recipient's phone number and password below
-SET PHONE=0000000002
-SET MSG="Test Loop 2"
+SET PHONE=09614806675
+SET MSG=""
 SET PASS=5090
 
 echo [1/3] Starting USB Tunnel...
@@ -20,7 +21,7 @@ SET USER=u0_a10443
 
 echo [3/3] Sending SMS via %USER%...
 :: Using sshpass to inject the password and skipping the 'trust this host' prompt
-%~dp0sshpass.exe -v -p %PASS% C:\Windows\System32\OpenSSH\ssh.exe -p 8022 -o StrictHostKeyChecking=no %USER%@127.0.0.1 "termux-sms-send -n %PHONE% %MSG%"
+%~dp0sshpass.exe -v -p %PASS% C:\Windows\System32\OpenSSH\ssh.exe -p 8022 -o StrictHostKeyChecking=no %USER%@127.0.0.1 "termux-sms-send -n "%PHONE%" "%MSG%""
 
 if %ERRORLEVEL% EQU 0 (
     echo.

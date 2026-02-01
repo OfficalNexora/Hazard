@@ -934,12 +934,13 @@ async def test_hardware_trigger(alert_level: int = 4):
     sms_recipients = contacts.get("sms", [])
     
     # 3. Broadcast SMS
+    from adb_worker import adb_worker
     count = 0
     for contact in sms_recipients:
         msg = contact.get("message", "WARNING: Simulated Hazard Alert! Please evacuate immediately.")
         print(f"[TEST] Broadcasting to {contact['number']}")
-        # Fire and forget task to not block response
-        asyncio.create_task(sensor_worker.send_sms(contact["number"], msg) if sensor_worker else None)
+        # Use asyncio.to_thread for synchronous adb_worker calls to prevent blocking the event loop
+        asyncio.create_task(asyncio.to_thread(adb_worker.send_sms, contact["number"], msg))
         count += 1
         
     return {"status": "triggered", "recipients_notified": count}
@@ -1179,19 +1180,12 @@ class CallRequest(BaseModel):
 async def send_sms_api(req: SmsRequest):
     """Send SMS via ADB or GSM hardware"""
     try:
-        # Try Control Worker first (which handles fallback)
-        control = get_control_worker()
-        if control:
-            # Using _send_gsm_message broadcasts to contacts, but we want direct send here.
-            # So we use adb_worker directly or public method if available.
-            from adb_worker import adb_worker
-            if adb_worker.send_sms(req.number, req.message):
-                return {"status": "success", "method": "adb"}
-                
-        # Fallback to direct import if worker not running
         from adb_worker import adb_worker
-        if adb_worker.send_sms(req.number, req.message):
-            return {"status": "success", "method": "adb_direct"}
+        # Run in thread since adb_worker.send_sms is sync and blocks for several seconds per message
+        success = await asyncio.to_thread(adb_worker.send_sms, req.number, req.message)
+        
+        if success:
+            return {"status": "success", "method": "adb"}
             
         return {"status": "error", "message": "Failed to send SMS via ADB"}
     except Exception as e:
@@ -1289,6 +1283,6 @@ if __name__ == "__main__":
         "server:app",
         host="0.0.0.0",
         port=8000,
-        reload=False,
+        reload=True,
         log_level="info"
     )

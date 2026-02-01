@@ -108,6 +108,12 @@ class ControlWorker:
         current_alert = state.get_alert()["value"]
         
         if class_name in self.critical_hazards:
+            # IMMEDIATE EVACUATION FOR FIRE/EXPLOSION
+            if "Fire" in class_name or "Explosion" in class_name:
+                print(f"[Control] CRITICAL: {class_name} detected! Initiating Evacuation.")
+                self.set_evacuate_mode(exit_zone=1)  # Default to Zone 1
+                return
+
             if current_alert < AlertState.DANGER:
                 self._trigger_alert(AlertState.DANGER, f"Detected: {class_name}")
         elif class_name in self.warning_hazards:
@@ -132,8 +138,12 @@ class ControlWorker:
         # Check tilt (now earthquake monitor)
         tilt_magnitude = abs(earthquake.get("x", 0)) + abs(earthquake.get("y", 0))
         if tilt_magnitude > self.tilt_threshold:
-            if current_alert < AlertState.CALLING:
-                self._trigger_alert(AlertState.CALLING, f"Ground vibration detected: {tilt_magnitude:.1f}°")
+            print(f"[Control] CRITICAL: Earthquake detected (Mag: {tilt_magnitude:.1f})! Initiating Evacuation.")
+            self.set_evacuate_mode(exit_zone=0) # Zone 0 = Open Field
+            return
+            
+            # if current_alert < AlertState.CALLING:
+            #     self._trigger_alert(AlertState.CALLING, f"Ground vibration detected: {tilt_magnitude:.1f}°")
     
     def _trigger_alert(self, alert_state: AlertState, reason: str):
         """Trigger an alert (Vocal/GUI only, doesn't call automatically)"""
@@ -193,18 +203,31 @@ class ControlWorker:
         return "general"
     
     def _trigger_gsm_emergency(self, reason: str, category: str = "general", voice_prompt: bool = True):
-        """Trigger emergency GSM call with 5x retry logic and Robot Voice"""
-        if not self.gsm_enabled or not self.sensor_worker:
+        """Trigger emergency GSM call and SMS in a background thread to prevent blocking the control loop"""
+        thread = threading.Thread(
+            target=self._execute_gsm_emergency,
+            args=(reason, category, voice_prompt),
+            daemon=True
+        )
+        thread.start()
+
+    def _execute_gsm_emergency(self, reason: str, category: str = "general", voice_prompt: bool = True):
+        """Internal worker method for emergency GSM operations via ADB"""
+        if not self.gsm_enabled:
+            print("[Control] Emergency SMS disabled")
             return
         
         self.gsm_status = GsmStatus.CALLING
         
-        # Get latest contacts from DB/State
+        # 1. ALWAYS trigger a mass SMS first (highest reliability)
+        self._send_gsm_message(f"EMERGENCY ALERT: {reason}", category=category)
+        
+        # 2. Get latest contacts for voice calls
         from database import get_gsm_contacts
         contacts = get_gsm_contacts().get("call", [])
         
         if not contacts:
-            print("[Control] Error: No SOS numbers found in database")
+            print("[Control] No voice SOS numbers found, SMS broadcast completed.")
             self.gsm_status = GsmStatus.IDLE
             return
 
@@ -212,7 +235,7 @@ class ControlWorker:
         dispatch_list = [c for c in contacts if c.get("category", "general") in ["general", category]]
 
         if not dispatch_list:
-            print(f"[Control] No contacts found for category: {category}")
+            print(f"[Control] No voice contacts found for category: {category}")
             self.gsm_status = GsmStatus.IDLE
             return
 
@@ -254,29 +277,45 @@ class ControlWorker:
         self.gsm_status = GsmStatus.IDLE
     
     def _send_gsm_message(self, message: str, category: str = "general"):
-        """Send GSM SMS message to all registered contacts"""
-        if not self.gsm_enabled or not self.sensor_worker:
+        """Send GSM SMS message to all registered contacts in a background thread"""
+        thread = threading.Thread(
+            target=self._execute_gsm_message,
+            args=(message, category),
+            daemon=True
+        )
+        thread.start()
+
+    def _execute_gsm_message(self, message: str, category: str = "general"):
+        """Internal worker method for SMS broadcasting via ADB"""
+        if not self.gsm_enabled:
+            print("[Control] SMS disabled")
             return
         
         from database import get_gsm_contacts
-        contacts = get_gsm_contacts().get("sms", [])
+        contacts_dict = get_gsm_contacts()
+        contacts = contacts_dict.get("sms", [])
         
         self.gsm_status = GsmStatus.MESSAGING
         
         # Filter contacts by category
         dispatch_list = [c for c in contacts if c.get("category", "general") in ["general", category]]
-
+        
+        print(f"[Control] SMS Broadcast: {len(contacts)} total contacts, {len(dispatch_list)} filtered for {category}")
+        
         for contact in dispatch_list:
             number = contact["number"]
             # Use custom message if contact has one, otherwise the general reason
             msg = contact.get("message") or message
-            cmd = {"cmd": "gsm_sms", "number": number, "message": msg}
-            self.sensor_worker.send_command(cmd)
-            print(f"[Control] GSM SMS sent to {number} via HW: {msg[:30]}...")
             
-            # Redundant ADB SMS
-            if adb_worker.is_device_connected():
-                adb_worker.send_sms(number, msg)
+            # Try hardware ESP32 GSM module (optional)
+            if self.sensor_worker:
+                cmd = {"cmd": "gsm_sms", "number": number, "message": msg}
+                self.sensor_worker.send_command(cmd)
+            
+            # ALWAYS send via ADB (primary method)
+            adb_worker.send_sms(number, msg)
+            
+            print(f"[Control] ADB SMS sent to {number}: {msg[:30]}...")
         
         self.gsm_status = GsmStatus.IDLE
     
@@ -294,7 +333,9 @@ class ControlWorker:
             cmd = {"cmd": "set_alert", "alert": int(AlertState.EVACUATE)}
             self.sensor_worker.send_command(cmd)
         
-        self._trigger_gsm_emergency("EVACUATION INITIATED", category="general")
+        # Specific instruction for SMS
+        instruction = "EVACUATE NOW. Proceed to nearest safe zone. Do not use elevators."
+        self._trigger_gsm_emergency(f"EMERGENCY: {instruction}", category="general")
         print(f"[Control] EVACUATION mode active, exit zone: {exit_zone}")
     
     def _control_loop(self):
@@ -330,7 +371,8 @@ class ControlWorker:
         print(f"[Control] EXECUTIVE OVERRIDE: {action} triggered")
         
         if action == "call_fire":
-            self._trigger_gsm_emergency("FIRE EMERGENCY IN PROGRESS", category="fire", voice_prompt=True)
+            # Override: Fire implies evacuation
+            self._trigger_gsm_emergency("FIRE EMERGENCY! EVACUATE NOW. Do not use elevators.", category="fire", voice_prompt=True)
             self._send_led_command(AlertState.DANGER)
             state.set_alert(AlertState.DANGER, "Manual Fire Alert", source="manual")
             
@@ -340,7 +382,7 @@ class ControlWorker:
             state.set_alert(AlertState.CALLING, "Manual Authority Call", source="manual")
             
         elif action == "earthquake_alert":
-            self._trigger_gsm_emergency("MAJOR EARTHQUAKE DETECTED. SEEK COVER.", category="debris", voice_prompt=True)
+            self._trigger_gsm_emergency("MAJOR EARTHQUAKE! EVACUATE NOW. Proceed to open fields.", category="debris", voice_prompt=True)
             self._send_led_command(AlertState.EVACUATE)
             state.set_alert(AlertState.EVACUATE, "Manual Earthquake Response", source="manual")
             

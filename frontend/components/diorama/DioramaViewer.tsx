@@ -547,8 +547,8 @@ export default function DioramaViewer({
                 <button
                     onClick={() => setIsReplayMode(!isReplayMode)}
                     className={`px-3 py-1 rounded text-sm ${isReplayMode
-                            ? 'bg-yellow-600 text-white'
-                            : 'bg-gray-700 text-gray-300'
+                        ? 'bg-yellow-600 text-white'
+                        : 'bg-gray-700 text-gray-300'
                         }`}
                 >
                     {isReplayMode ? '⏸ Live Mode' : '⏪ Replay Mode'}
