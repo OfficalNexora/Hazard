@@ -360,7 +360,7 @@ async def set_alert(req: AlertRequest):
     if req.alert < 0 or req.alert > 4:
         raise HTTPException(status_code=400, detail="Invalid alert value (0-4)")
     
-    state.set_alert(AlertState(req.alert), req.reason)
+    state.set_alert(AlertState(req.alert), req.reason, source="manual")
     
     # Forward to control worker
     control = get_control_worker()
@@ -1162,6 +1162,51 @@ async def ptz_move(req: PTZRequest):
             return {"status": "moving", "direction": req.direction}
     
     raise HTTPException(status_code=400, detail="PTZ command failed")
+
+
+# ============================================================================
+# COMMUNICATIONS & GSM ENDPOINTS
+# ============================================================================
+
+class SmsRequest(BaseModel):
+    number: str
+    message: str
+
+class CallRequest(BaseModel):
+    number: str
+
+@app.post("/api/communication/sms")
+async def send_sms_api(req: SmsRequest):
+    """Send SMS via ADB or GSM hardware"""
+    try:
+        # Try Control Worker first (which handles fallback)
+        control = get_control_worker()
+        if control:
+            # Using _send_gsm_message broadcasts to contacts, but we want direct send here.
+            # So we use adb_worker directly or public method if available.
+            from adb_worker import adb_worker
+            if adb_worker.send_sms(req.number, req.message):
+                return {"status": "success", "method": "adb"}
+                
+        # Fallback to direct import if worker not running
+        from adb_worker import adb_worker
+        if adb_worker.send_sms(req.number, req.message):
+            return {"status": "success", "method": "adb_direct"}
+            
+        return {"status": "error", "message": "Failed to send SMS via ADB"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/communication/call")
+async def initiate_call_api(req: CallRequest):
+    """Initiate Call via ADB"""
+    try:
+        from adb_worker import adb_worker
+        if adb_worker.make_call(req.number):
+            return {"status": "success"}
+        return {"status": "error", "message": "Failed to initiate call"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ============================================================================

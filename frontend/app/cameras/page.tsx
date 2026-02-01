@@ -137,13 +137,14 @@ export default function CamerasPage() {
     }, [draggingCam, dragOffset]);
 
     const toggleTalk = (deviceId: string) => {
-        const newTalking = new Set(talkingCameras);
-        if (newTalking.has(deviceId)) {
-            newTalking.delete(deviceId);
-        } else {
-            newTalking.add(deviceId);
-        }
-        setTalkingCameras(newTalking);
+        alert("Two-way audio is currently unavailable (Backend implementation pending).");
+        // const newTalking = new Set(talkingCameras);
+        // if (newTalking.has(deviceId)) {
+        //     newTalking.delete(deviceId);
+        // } else {
+        //     newTalking.add(deviceId);
+        // }
+        // setTalkingCameras(newTalking);
     };
 
     const toggleControls = (deviceId: string) => {
@@ -310,8 +311,16 @@ export default function CamerasPage() {
                                             <div className="p-3">
                                                 {/* Status Indicator (if available) */}
                                                 {camStatus[cam.device_id] && (
-                                                    <div className="text-[10px] text-center mb-2 font-mono text-cyan-400">
-                                                        X:{camStatus[cam.device_id].pan.toFixed(2)} Y:{camStatus[cam.device_id].tilt.toFixed(2)}
+                                                    <div className="text-[10px] text-center mb-2 font-mono text-cyan-400 h-4">
+                                                        {(() => {
+                                                            const { pan, tilt } = camStatus[cam.device_id];
+                                                            const parts = [];
+                                                            if (pan <= -0.9) parts.push("MAX LEFT");
+                                                            if (pan >= 0.9) parts.push("MAX RIGHT");
+                                                            if (tilt >= 0.9) parts.push("MAX UP");
+                                                            if (tilt <= -0.9) parts.push("MAX DOWN");
+                                                            return parts.length > 0 ? parts.join(" • ") : "";
+                                                        })()}
                                                     </div>
                                                 )}
 
@@ -324,8 +333,8 @@ export default function CamerasPage() {
                                                                 ? "destructive" : "secondary"
                                                         }
                                                         className={`h-10 w-10 rounded-lg transition-colors ${(camStatus[cam.device_id]?.tilt ?? 0) >= 0.9
-                                                                ? "opacity-50 cursor-not-allowed"
-                                                                : "hover:bg-cyan-500/20 hover:text-cyan-400"
+                                                            ? "opacity-50 cursor-not-allowed"
+                                                            : "hover:bg-cyan-500/20 hover:text-cyan-400"
                                                             }`}
                                                         onClick={async (e) => {
                                                             e.stopPropagation();
@@ -370,8 +379,8 @@ export default function CamerasPage() {
                                                                 ? "destructive" : "secondary"
                                                         }
                                                         className={`h-10 w-10 rounded-lg transition-colors ${(camStatus[cam.device_id]?.tilt ?? 0) <= -0.9
-                                                                ? "opacity-50 cursor-not-allowed"
-                                                                : "hover:bg-cyan-500/20 hover:text-cyan-400"
+                                                            ? "opacity-50 cursor-not-allowed"
+                                                            : "hover:bg-cyan-500/20 hover:text-cyan-400"
                                                             }`}
                                                         onClick={async (e) => {
                                                             e.stopPropagation();

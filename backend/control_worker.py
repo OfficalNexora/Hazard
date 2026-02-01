@@ -144,7 +144,7 @@ class ControlWorker:
         self.last_alert_change = now
         
         # Update state
-        state.set_alert(alert_state, reason)
+        state.set_alert(alert_state, reason, source="auto")
         print(f"[Control] Alert detected: {alert_state.name} - {reason}")
         
         # Send command to ESP32 for LED visual only
@@ -282,13 +282,13 @@ class ControlWorker:
     
     def set_safe_mode(self):
         """Manually set system to SAFE mode"""
-        state.set_alert(AlertState.SAFE, "Manual reset")
+        state.set_alert(AlertState.SAFE, "Manual reset", source="manual")
         self._send_led_command(AlertState.SAFE)
         print("[Control] SYSTEM SECURED: SAFE MODE")
     
     def set_evacuate_mode(self, exit_zone: int = 3):
         """Trigger evacuation mode"""
-        state.set_alert(AlertState.EVACUATE, f"Evacuation to zone {exit_zone}")
+        state.set_alert(AlertState.EVACUATE, f"Evacuation to zone {exit_zone}", source="manual")
         
         if self.sensor_worker:
             cmd = {"cmd": "set_alert", "alert": int(AlertState.EVACUATE)}
@@ -318,7 +318,7 @@ class ControlWorker:
             current_alert = state.get_alert()
             if current_alert["value"] > 0:
                 if now - self.last_alert_change > 600:
-                    self.set_safe_mode()
+                    state.set_alert(AlertState.SAFE, "Auto timeout", source="auto")
             
             time.sleep(0.5)
 
@@ -332,17 +332,17 @@ class ControlWorker:
         if action == "call_fire":
             self._trigger_gsm_emergency("FIRE EMERGENCY IN PROGRESS", category="fire", voice_prompt=True)
             self._send_led_command(AlertState.DANGER)
-            state.set_alert(AlertState.DANGER, "Manual Fire Alert")
+            state.set_alert(AlertState.DANGER, "Manual Fire Alert", source="manual")
             
         elif action == "call_police":
             self._trigger_gsm_emergency("POLICE ASSISTANCE REQUIRED", voice_prompt=True)
             self._send_led_command(AlertState.CALLING)
-            state.set_alert(AlertState.CALLING, "Manual Authority Call")
+            state.set_alert(AlertState.CALLING, "Manual Authority Call", source="manual")
             
         elif action == "earthquake_alert":
             self._trigger_gsm_emergency("MAJOR EARTHQUAKE DETECTED. SEEK COVER.", category="debris", voice_prompt=True)
             self._send_led_command(AlertState.EVACUATE)
-            state.set_alert(AlertState.EVACUATE, "Manual Earthquake Response")
+            state.set_alert(AlertState.EVACUATE, "Manual Earthquake Response", source="manual")
             
         elif action == "sms_broadcast":
             self._send_gsm_message(details)
