@@ -99,12 +99,9 @@ class VisionWorker:
                 self.last_frames[stream_id] = buffer.tobytes()
             
             # Determine if rotation is needed
-            # User requested 180 degree rotation for ESP32
-            rotation = 0
-            if "esp32" in device_id.lower() or "camera" in device_id.lower():
-                rotation = 180
+            should_rotate = "esp32" in device_id.lower() or "camera" in device_id.lower()
             
-            streamer.add_stream(device_id, source, frame_callback=on_frame, rotation_angle=rotation)
+            streamer.add_stream(device_id, source, frame_callback=on_frame, rotate=should_rotate)
             self.streams[device_id] = {
                 "source": source,
                 "active": True,

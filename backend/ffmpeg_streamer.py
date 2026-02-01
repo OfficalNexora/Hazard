@@ -43,7 +43,7 @@ class FFmpegRTSPStreamer:
     
     def add_stream(self, stream_id: str, rtsp_url: str, 
                    frame_callback: Optional[Callable] = None,
-                   width: int = 640, height: int = 480, rotation_angle: int = 0):
+                   width: int = 640, height: int = 480, rotate: bool = False):
         """
         Add a new RTSP stream.
         
@@ -53,10 +53,14 @@ class FFmpegRTSPStreamer:
             frame_callback: Optional callback for each frame
             width: Output frame width
             height: Output frame height
-            rotation_angle: 0, 90, 180, or 270 degrees clockwise
+            rotate: If True, rotate 90 degrees clockwise (transpose=1)
         """
         if stream_id in self.streams:
             self.remove_stream(stream_id)
+        
+        # If rotating, the output buffer will have swapped dimensions
+        # But we still ask ffmpeg to scale to WxH BEFORE rotation usually
+        # Actually safer to scale to WxH then rotate -> Output is HxW
         
         self.streams[stream_id] = {
             "url": rtsp_url,
@@ -68,7 +72,7 @@ class FFmpegRTSPStreamer:
             "callback": frame_callback,
             "width": width,
             "height": height,
-            "rotation_angle": rotation_angle,
+            "rotate": rotate,
             "use_ffmpeg": self.ffmpeg_path is not None
         }
         
@@ -81,7 +85,7 @@ class FFmpegRTSPStreamer:
         self.streams[stream_id]["thread"] = thread
         thread.start()
         
-        print(f"[FFmpegStreamer] Started stream: {stream_id} (rotation={rotation_angle})")
+        print(f"[FFmpegStreamer] Started stream: {stream_id} (rotate={rotate})")
     
     def _stream_loop(self, stream_id: str):
         """Main stream processing loop"""
@@ -92,14 +96,14 @@ class FFmpegRTSPStreamer:
         url = stream["url"]
         width = stream["width"]
         height = stream["height"]
-        rotation_angle = stream.get("rotation_angle", 0)
+        rotate = stream.get("rotate", False)
         
         if stream["use_ffmpeg"]:
-            self._ffmpeg_stream(stream_id, url, width, height, rotation_angle)
+            self._ffmpeg_stream(stream_id, url, width, height, rotate)
         else:
             self._opencv_stream(stream_id, url)
     
-    def _ffmpeg_stream(self, stream_id: str, url: str, width: int, height: int, rotation_angle: int):
+    def _ffmpeg_stream(self, stream_id: str, url: str, width: int, height: int, rotate: bool):
         """Stream using FFmpeg subprocess - most reliable method"""
         stream = self.streams.get(stream_id)
         if not stream:
@@ -117,19 +121,17 @@ class FFmpegRTSPStreamer:
         ])
 
         # Logic: Filter chain
+        # Scale -> Rotate (optional)
+        # Note: If we rotate, the output resolution swaps.
         filters = []
         filters.append(f"scale={width}:{height}")
         
         final_width = width
         final_height = height
         
-        if rotation_angle == 90:
+        if rotate:
             filters.append("transpose=1") # 90 Clockwise
-            final_width, final_height = height, width
-        elif rotation_angle == 180:
-            filters.append("transpose=1,transpose=1") # 180
-        elif rotation_angle == 270:
-            filters.append("transpose=2") # 90 Counter-Clockwise
+            # Swap dimensions for buffer reading
             final_width, final_height = height, width
             
         if filters:
