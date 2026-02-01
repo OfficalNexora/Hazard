@@ -82,9 +82,9 @@ class VisionWorker:
         """
         print(f"[VisionWorker] Adding camera {device_id} at {source} (vflip={vflip})")
         
-        # For RTSP streams, use FFmpeg streamer (more reliable)
-        if source.startswith("rtsp://"):
-            print(f"[VisionWorker] Using FFmpeg subprocess for RTSP stream")
+        # For Network streams (RTSP or HTTP MJPEG), use FFmpeg streamer (more reliable)
+        if source.startswith(("rtsp://", "http://")):
+            print(f"[VisionWorker] Using FFmpeg streamer for network source: {source}")
             from ffmpeg_streamer import get_streamer
             streamer = get_streamer()
             
@@ -94,10 +94,17 @@ class VisionWorker:
                     frame = cv2.flip(frame, 0)
                 if hflip:
                     frame = cv2.flip(frame, 1)
+                
                 _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
                 self.last_frames[stream_id] = buffer.tobytes()
             
-            streamer.add_stream(device_id, source, frame_callback=on_frame)
+            # Determine if rotation is needed
+            # User requested 180 degree rotation for ESP32
+            rotation = 0
+            if "esp32" in device_id.lower() or "camera" in device_id.lower():
+                rotation = 180
+            
+            streamer.add_stream(device_id, source, frame_callback=on_frame, rotation_angle=rotation)
             self.streams[device_id] = {
                 "source": source,
                 "active": True,

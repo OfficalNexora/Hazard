@@ -44,32 +44,97 @@ class DiscoveryService:
         except:
             return "127.0.0.1"
 
+    def _get_tunnel_url(self):
+        """Read tunnel URL from file if available"""
+        import os
+        tunnel_file = os.path.join(os.path.dirname(__file__), "..", "tunnel_url.txt")
+        if os.path.exists(tunnel_file):
+            try:
+                with open(tunnel_file, "r") as f:
+                    return f.read().strip()
+            except:
+                pass
+        return ""
+
     def _broadcast_loop(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         
-        server_ip = self.get_local_ip()
-        message = json.dumps({
-            "type": "server_announce",
-            "ip": server_ip,
-            "port": REGISTRATION_PORT,
-            "system": "MOD-EVAC-MS"
-        }).encode()
-        
-        print(f"[Discovery] Broadcasting server at {server_ip} on port {self.port}")
+        print(f"[Discovery] Broadcasting server on port {self.port}")
         
         while self.running:
             try:
+                server_ip = self.get_local_ip()
+                tunnel_url = self._get_tunnel_url()
+                
+                message = json.dumps({
+                    "type": "server_announce",
+                    "ip": server_ip,
+                    "tunnel": tunnel_url,
+                    "port": REGISTRATION_PORT,
+                    "api_port": 8000,
+                    "system": "MOD-EVAC-MS"
+                }).encode()
+                
+                sock.sendto(message, ('<broadcast>', self.port))
                 sock.sendto(message, ('<broadcast>', self.port))
             except Exception as e:
                 print(f"[Discovery] Broadcast error: {e}")
             time.sleep(BROADCAST_INTERVAL)
         sock.close()
 
+    def _listen_loop(self):
+        """Listen for cameras broadcasting on the same port"""
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind(('', self.port))
+        except:
+            print(f"[Discovery] Could not bind listener on port {self.port}")
+            return
+            
+        print(f"[Discovery] Listening for devices on port {self.port}")
+        
+        while self.running:
+            try:
+                data, addr = sock.recvfrom(1024)
+                try:
+                    msg = json.loads(data.decode())
+                    if msg.get("type") == "camera_discovery":
+                        device_id = msg.get("id")
+                        ip = msg.get("ip")
+                        if device_id and ip:
+                            # Add to global discovered list (simple hack)
+                            from state_manager import state
+                            # We can't directly add to state, but we can store it in a global
+                            if not hasattr(self, "discovered_cameras"):
+                                self.discovered_cameras = {}
+                            self.discovered_cameras[device_id] = {"ip": ip, "last_seen": time.time()}
+                except:
+                    pass
+            except:
+                pass
+        sock.close()
+
+    def get_discovered_cameras(self):
+        if not hasattr(self, "discovered_cameras"):
+            return []
+        
+        # Filter out old devices (> 10s)
+        now = time.time()
+        active = []
+        for dev_id, info in self.discovered_cameras.items():
+            if now - info["last_seen"] < 10:
+                active.append({"ip": info["ip"], "model": "ESP32-CAM", "id": dev_id})
+        return active
+
     def start(self):
         self.running = True
         self.thread = threading.Thread(target=self._broadcast_loop, daemon=True)
         self.thread.start()
+        
+        self.listener_thread = threading.Thread(target=self._listen_loop, daemon=True)
+        self.listener_thread.start()
 
     def stop(self):
         self.running = False

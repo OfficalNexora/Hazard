@@ -14,7 +14,15 @@ We have successfully transformed the Nexora Ops system into a **Hybrid Android H
 3.  **Audio Broadcast System**:
     *   MP3 upload endpoint in `server.py`.
     *   ADB-based audio push and speakerphone playback in `sms_worker.py`.
-4.  **`frontend/`**: Updated with `output: 'export'` in `next.config.ts` to support static generation.
+4.  **`firmware/esp32_cam`**: Custom ESP32-CAM firmware with:
+    *   **Zero-Config Handshake**: Auto-detects on 192.168.4.1.
+    *   **Black-Box Logging**: Writes diagnostics to an 8GB SD card.
+    *   **MJPEG Relay**: Optimized for public tunneling (Cloudflare/Ngrok).
+5.  **`firmware/main_controller`**: High-performance Robotics Controller (MOD-EVAC-MAIN).
+    *   **No-Code-Change Design**: Communicates via Serial JSON at 115200 baud.
+    *   **Real-time Telemetry**: Stream fire/seismic/rain data to the hub without WiFi overhead.
+    *   **LED Guidance**: AI-driven zone control for evacuation paths.
+6.  **`frontend/`**: Updated with `output: 'export'` in `next.config.ts` to support static generation.
 
 ## Current Status: Source Ready
 The source code is fully prepared and configured. However, the automated APK build process on this machine was halted because the **Android SDK** is missing.
@@ -35,8 +43,19 @@ To produce the final APK, follow these steps:
 3.  **Install on Device**:
     The generic APK will be at `build/app/outputs/flutter-apk/app-release.apk`.
 
+## Cloudflare Tunneling & "Leakage" Discovery
+To enable long-distance operation without port forwarding, use the included **`start_tunnel.py`** script:
+1.  **Run the tunnel**: `python start_tunnel.py`. This starts a `cloudflared` quick tunnel.
+2.  **The "Leakage"**: The script writes the public URL to `tunnel_url.txt`. 
+3.  **Discovery**: 
+    *   The backend serves this URL at `/api/discovery/tunnel`.
+    *   Devices (ESP32/Cam) use **Open WiFi** (no password) to connect to any available hotspot.
+    *   They can be provisioned with the tunnel URL via the dashboard's **Provisioning Modal**.
+    *   Once provisioned, they communicate over the internet via the tunnel, enabling remote robotics control across different networks.
+
 ## Architecture Note
 -   The backend detects it is running on Android via the `ANDROID_MODE` environment variable (set in `main.py`).
 -   **Communication Logic**: The `sms_worker.py` uses ADB commands. For SMS and Audio broadcasts to work on Windows (connected to a phone) or on the Android APK itself, ADB must be available or the device must have permissions.
+-   **Zero-Security Mode**: As per project requirements, the ESP32/Cam APs and WiFi connections are configured to be password-free ("No Password") for quick deployment and pairing in "Locate" scenarios.
 -   **Situational Context**: The system uses loose matching on the alert "reason" to categorize contacts. For example, a reason containing "fire" triggers contacts in the "fire" category.
 -   In this mode, `opencv-python` and `ultralytics` imports are skipped to prevent crashes, as these libraries are not included in the lightweight mobile environment.

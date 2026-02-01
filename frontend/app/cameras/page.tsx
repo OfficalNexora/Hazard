@@ -198,7 +198,7 @@ export default function CamerasPage() {
                                 {/* Real Video Stream Relay */}
                                 <img
                                     src={`${API_BASE_URL}/api/video_feed?id=${cam.device_id}`}
-                                    className="w-full h-full object-cover"
+                                    className="absolute inset-0 w-full h-full object-cover"
                                     alt={cam.device_id}
                                     onError={(e) => {
                                         const target = e.target as HTMLImageElement;

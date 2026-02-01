@@ -17,6 +17,7 @@ import os
 import threading
 import time
 import subprocess
+import sys
 from typing import List, Optional, Set
 from contextlib import asynccontextmanager
 
@@ -161,6 +162,16 @@ async def lifespan(app: FastAPI):
     
     print("[Server] Workers started")
 
+    # Start Cloudflare Tunnel (leakage) if not running via launcher
+    try:
+        if not os.environ.get("NEXORA_LAUNCHER"):
+            tunnel_script = os.path.join(os.path.dirname(__file__), "..", "start_tunnel.py")
+            if os.path.exists(tunnel_script):
+                print(f"[Server] Auto-launching Cloudflare tunnel: {tunnel_script}")
+                subprocess.Popen([sys.executable, tunnel_script], creationflags=subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0)
+    except Exception as e:
+        print(f"[Server] Tunnel auto-launch failed: {e}")
+
     # Load persisted cameras
     try:
         saved_cameras = get_cameras_db()
@@ -272,6 +283,20 @@ class ManualTriggerRequest(BaseModel):
     action_type: str
     details: str = ""
 
+class TelemetryRequest(BaseModel):
+    device_id: str
+    fire_active: Optional[bool] = False
+    rain_active: Optional[bool] = False
+    seismic_active: Optional[bool] = False
+    fire_raw: Optional[int] = 0
+    rain_raw: Optional[int] = 0
+    ax: Optional[float] = 0
+    ay: Optional[float] = 0
+    az: Optional[float] = 0
+    gx: Optional[float] = 0
+    gy: Optional[float] = 0
+    gz: Optional[float] = 0
+
 # ============================================================================
 # FASTAPI APP
 # ============================================================================
@@ -296,6 +321,16 @@ app.add_middleware(
 # ============================================================================
 # API ENDPOINTS
 # ============================================================================
+
+@app.get("/api/discovery/tunnel")
+async def get_tunnel_leakage():
+    """Discover the current public tunnel URL (leakage)"""
+    if os.path.exists("tunnel_url.txt"):
+        with open("tunnel_url.txt", "r") as f:
+            url = f.read().strip()
+            return {"status": "found", "url": url}
+    return {"status": "not_discovered", "msg": "No tunnel active or start_tunnel.py hasn't been run."}
+
 
 @app.get("/api")
 async def api_root():
@@ -592,6 +627,28 @@ async def register_camera(req: CameraRequest):
     raise HTTPException(status_code=503, detail="Vision worker not available")
 
 
+@app.post("/api/telemetry")
+async def receive_telemetry(req: TelemetryRequest):
+    """Receive real-time sensor telemetry from WiFi-based ESP32 controllers (via Tunneling)"""
+    state.update_sensor(
+        fire=req.fire_active,
+        raining=float(req.rain_raw), 
+        earthquake={
+            "x": req.gx,
+            "y": req.gy,
+            "z": req.gz
+        },
+        accel={
+            "x": req.ax,
+            "y": req.ay,
+            "z": req.az
+        }
+    )
+    # Update device status so it shows as connected on the dashboard
+    state.update_device(req.device_id, "esp32_main", True, "Remote/Cloud")
+    return {"status": "success", "device_id": req.device_id}
+
+
 @app.get("/api/cameras/debug")
 async def debug_cameras():
     """Debug endpoint to view active camera streams"""
@@ -735,51 +792,14 @@ async def discover_cameras():
     import socket
     import asyncio
     
-    # 1. Determine Local Subnet
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        # Connect to a public DNS to get the correct outbound interface IP
-        s.connect(("8.8.8.8", 80))
-        local_ip = s.getsockname()[0]
-    except:
-        local_ip = "127.0.0.1"
-    finally:
-        s.close()
-
-    if local_ip == "127.0.0.1":
-        return {"cameras": [], "subnet": "unknown"}
-
-    subnet_base = ".".join(local_ip.split(".")[:3])
-    print(f"[Discovery] Scanning subnet: {subnet_base}.x")
-
-    found_cameras = []
-
-    # 2. Async Port Scanner
-    async def check_ip(ip):
-        try:
-            reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(ip, 81), 
-                timeout=0.2  # Short timeout for speed
-            )
-            writer.close()
-            await writer.wait_closed()
-            return ip
-        except:
-            return None
-
-    # 3. Launch scans for .2 to .254
-    tasks = []
-    for i in range(2, 255):
-        ip = f"{subnet_base}.{i}"
-        if ip != local_ip:
-            tasks.append(check_ip(ip))
+    # 1. Get discovered cameras from UDP listener service
+    found_cameras = discovery.get_discovered_cameras()
     
-    # 4. Gather results
-    results = await asyncio.gather(*tasks)
+    # 2. Add local scan as backup (optional, or remove if confident in UDP)
+    # For now, let's keep it simple and just use the UDP results
+    # which is much faster and more accurate for our ESP32-CAMs
     
-    for ip in results:
-        if ip:
-            found_cameras.append({"ip": ip, "model": "ESP32-CAM"})
+    return {"cameras": found_cameras, "subnet": "auto"}
             
     print(f"[Discovery] Found {len(found_cameras)} cameras")
     return {"cameras": found_cameras, "subnet": f"{subnet_base}.x"}

@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Activity, Droplets, RotateCcw, AlertTriangle, Wifi, WifiOff, Phone, Bell, Box, ShieldAlert } from "lucide-react";
 import { useSensorData, useAlertState, useDetections, useDevices } from "@/lib/hooks";
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 // Alert state colors and labels
 const ALERT_CONFIG: Record<string, { color: string; bgColor: string; label: string }> = {
   SAFE: { color: 'text-emerald-500', bgColor: 'bg-emerald-500/10', label: 'SAFE' },
@@ -272,7 +274,7 @@ export default function Dashboard() {
               <div className="bg-black relative group">
                 {activeCamera ? (
                   <img
-                    src={`http://localhost:8000/api/video_feed?id=${activeCamera.device_id}`}
+                    src={`${API_BASE_URL}/api/video_feed?id=${activeCamera.device_id}`}
                     className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition"
                     alt="Main Feed"
                   />

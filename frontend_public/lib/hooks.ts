@@ -8,9 +8,8 @@ import {
     SensorData,
     getWebSocketManager,
     fetchSystemStatus,
+    API_BASE_URL
 } from './api';
-
-// Hook for public authentication (pairing)
 export function usePublicAuth() {
     const [isPaired, setIsPaired] = useState<boolean>(false);
     const [pairingCode, setPairingCode] = useState<string | null>(null);

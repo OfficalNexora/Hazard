@@ -43,7 +43,7 @@ class FFmpegRTSPStreamer:
     
     def add_stream(self, stream_id: str, rtsp_url: str, 
                    frame_callback: Optional[Callable] = None,
-                   width: int = 640, height: int = 480):
+                   width: int = 640, height: int = 480, rotation_angle: int = 0):
         """
         Add a new RTSP stream.
         
@@ -53,6 +53,7 @@ class FFmpegRTSPStreamer:
             frame_callback: Optional callback for each frame
             width: Output frame width
             height: Output frame height
+            rotation_angle: 0, 90, 180, or 270 degrees clockwise
         """
         if stream_id in self.streams:
             self.remove_stream(stream_id)
@@ -67,6 +68,7 @@ class FFmpegRTSPStreamer:
             "callback": frame_callback,
             "width": width,
             "height": height,
+            "rotation_angle": rotation_angle,
             "use_ffmpeg": self.ffmpeg_path is not None
         }
         
@@ -79,7 +81,7 @@ class FFmpegRTSPStreamer:
         self.streams[stream_id]["thread"] = thread
         thread.start()
         
-        print(f"[FFmpegStreamer] Started stream: {stream_id}")
+        print(f"[FFmpegStreamer] Started stream: {stream_id} (rotation={rotation_angle})")
     
     def _stream_loop(self, stream_id: str):
         """Main stream processing loop"""
@@ -90,30 +92,52 @@ class FFmpegRTSPStreamer:
         url = stream["url"]
         width = stream["width"]
         height = stream["height"]
+        rotation_angle = stream.get("rotation_angle", 0)
         
         if stream["use_ffmpeg"]:
-            self._ffmpeg_stream(stream_id, url, width, height)
+            self._ffmpeg_stream(stream_id, url, width, height, rotation_angle)
         else:
             self._opencv_stream(stream_id, url)
     
-    def _ffmpeg_stream(self, stream_id: str, url: str, width: int, height: int):
+    def _ffmpeg_stream(self, stream_id: str, url: str, width: int, height: int, rotation_angle: int):
         """Stream using FFmpeg subprocess - most reliable method"""
         stream = self.streams.get(stream_id)
         if not stream:
             return
         
-        # FFmpeg command to read RTSP and output raw RGB frames
-        cmd = [
-            self.ffmpeg_path,
-            "-rtsp_transport", "tcp",           # Use TCP for more reliability
-            "-i", url,                          # Input RTSP URL
-            "-f", "rawvideo",                   # Output raw video
-            "-pix_fmt", "bgr24",                # BGR format (OpenCV compatible)
-            "-s", f"{width}x{height}",          # Scale to desired size
-            "-r", "15",                         # 15 FPS
-            "-loglevel", "error",               # Only show errors
-            "-"                                 # Output to stdout
-        ]
+        # FFmpeg command
+        cmd = [self.ffmpeg_path]
+        
+        # Add RTSP specific options
+        if url.startswith("rtsp://"):
+            cmd.extend(["-rtsp_transport", "tcp"])
+            
+        cmd.extend([
+            "-i", url, "-f", "rawvideo", "-pix_fmt", "bgr24",
+        ])
+
+        # Logic: Filter chain
+        filters = []
+        filters.append(f"scale={width}:{height}")
+        
+        final_width = width
+        final_height = height
+        
+        if rotation_angle == 90:
+            filters.append("transpose=1") # 90 Clockwise
+            final_width, final_height = height, width
+        elif rotation_angle == 180:
+            filters.append("transpose=1,transpose=1") # 180
+        elif rotation_angle == 270:
+            filters.append("transpose=2") # 90 Counter-Clockwise
+            final_width, final_height = height, width
+            
+        if filters:
+            cmd.extend(["-vf", ",".join(filters)])
+            
+        cmd.extend([
+            "-r", "15", "-loglevel", "error", "-"
+        ])
         
         print(f"[FFmpegStreamer] Launching: {' '.join(cmd[:6])}...")
         
@@ -126,7 +150,7 @@ class FFmpegRTSPStreamer:
             )
             stream["process"] = process
             
-            frame_size = width * height * 3  # BGR = 3 bytes per pixel
+            frame_size = final_width * final_height * 3  # BGR = 3 bytes per pixel
             
             while self.running and stream["active"]:
                 raw_frame = process.stdout.read(frame_size)
@@ -137,7 +161,7 @@ class FFmpegRTSPStreamer:
                 
                 # Convert raw bytes to numpy array
                 frame = np.frombuffer(raw_frame, dtype=np.uint8)
-                frame = frame.reshape((height, width, 3))
+                frame = frame.reshape((final_height, final_width, 3))
                 
                 # Store frame
                 stream["last_frame"] = frame

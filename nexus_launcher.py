@@ -218,6 +218,7 @@ class NexoraLauncher(ctk.CTk):
         self.server_process = None
         self.admin_process = None
         self.public_process = None
+        self.tunnel_process = None
         self.is_running = False
         self.local_ip = self._get_local_ip()
         self.pairing_code = "--- ---"
@@ -241,7 +242,7 @@ class NexoraLauncher(ctk.CTk):
     def cleanup(self):
         """Force cleanup of child processes."""
         self.is_running = False
-        for proc_attr in ['server_process', 'admin_process', 'public_process']:
+        for proc_attr in ['server_process', 'admin_process', 'public_process', 'tunnel_process']:
             proc = getattr(self, proc_attr)
             if proc:
                 try:
@@ -439,6 +440,7 @@ class NexoraLauncher(ctk.CTk):
                 subprocess.run(cmd, shell=True, capture_output=True)
 
         # 1. Start server thread (Firewall check happens inside)
+        os.environ["NEXORA_LAUNCHER"] = "true"
         self.server_thread = threading.Thread(target=self._run_server, daemon=True)
         self.server_thread.start()
         
@@ -566,6 +568,19 @@ class NexoraLauncher(ctk.CTk):
                     self.log("Public Portal (Next.js) starting on port 3001...")
                 else:
                     self.log("ERROR: Public Portal directory not found.")
+
+                # 4. Start Cloudflare Tunnel (Port 8000)
+                tunnel_script = resource_path("start_tunnel.py")
+                if os.path.exists(tunnel_script):
+                    self.log("Launching Cloudflare Public Tunnel...")
+                    self.tunnel_process = subprocess.Popen(
+                        [python_exe, "-u", tunnel_script],
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                        text=True, encoding="utf-8", errors="replace", bufsize=1
+                    )
+                    threading.Thread(target=self._read_stream, args=(self.tunnel_process, "TUNNEL"), daemon=True).start()
+                else:
+                    self.log("WARNING: start_tunnel.py not found.")
 
                 # Keep the main server thread alive while running
                 while self.is_running:

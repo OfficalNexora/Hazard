@@ -98,6 +98,12 @@ export async function triggerEvacuation(exitZone: number = 3): Promise<{ status:
     return res.json();
 }
 
+export async function fetchTunnelUrl(): Promise<{ status: string, url?: string }> {
+    const res = await fetch(`${API_BASE_URL}/api/discovery/tunnel`);
+    if (!res.ok) return { status: 'error' };
+    return res.json();
+}
+
 export async function setSafeMode(): Promise<{ status: string }> {
     const res = await fetch(`${API_BASE_URL}/api/safe`, {
         method: 'POST',
@@ -291,6 +297,27 @@ export async function provisionCamera(config: { ssid: string, password: string, 
     });
     if (!res.ok) throw new Error('Failed to provision camera. Are you connected to its WiFi?');
     return res.json();
+}
+
+/**
+ * Probes for the camera on its default SoftAP IP
+ */
+export async function checkSoftApConnection(): Promise<{ type: string, name: string } | null> {
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1500);
+
+        const res = await fetch(`http://192.168.4.1/status`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+            const data = await res.json();
+            if (data.type === 'esp32_cam' || data.type === 'robot_main') return data;
+        }
+    } catch (e) {
+        // Silent fail - camera not in AP mode or not connected
+    }
+    return null;
 }
 
 // WebSocket Manager

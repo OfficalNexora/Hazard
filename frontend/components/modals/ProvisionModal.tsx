@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +16,7 @@ import {
     Search,
     Network
 } from "lucide-react";
-import { provisionCamera, registerCamera, registerTapoCamera, discoverCameras, discoverRtspCameras } from "@/lib/api";
+import { provisionCamera, registerCamera, registerTapoCamera, discoverCameras, discoverRtspCameras, checkSoftApConnection, fetchTunnelUrl } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 
 interface ProvisionModalProps {
@@ -34,6 +34,40 @@ export function ProvisionModal({ open, onOpenChange, onSuccess }: ProvisionModal
     const [foundCameras, setFoundCameras] = useState<{ ip: string, model: string }[]>([]);
     const [foundRtsp, setFoundRtsp] = useState<{ ip: string, ports: number[], type: string, suggested_port: number }[]>([]);
     const [scanningRtsp, setScanningRtsp] = useState(false);
+    const [cameraDetected, setCameraDetected] = useState<boolean>(false);
+    const [tunnelUrl, setTunnelUrl] = useState<string | null>(null);
+
+    // Auto-detect SoftAP connection and Tunnel
+    useEffect(() => {
+        let interval: any;
+
+        const fetchTunnel = async () => {
+            try {
+                const data = await fetchTunnelUrl();
+                if (data.status === 'found' && data.url) {
+                    setTunnelUrl(data.url);
+                }
+            } catch (e) { }
+        };
+        fetchTunnel();
+        if (open && activeTab === "provision" && step === 1) {
+            const check = async () => {
+                const detected = await checkSoftApConnection();
+                if (detected) {
+                    setCameraDetected(true);
+                    // Optionally pre-fill name if not edited
+                    if (config.name.startsWith("Nexora Cam")) {
+                        setConfig(prev => ({ ...prev, name: detected.name || prev.name }));
+                    }
+                } else {
+                    setCameraDetected(false);
+                }
+            };
+            check();
+            interval = setInterval(check, 3000);
+        }
+        return () => clearInterval(interval);
+    }, [open, activeTab, step]);
 
     // Config for SoftAP Provisioning
     const [config, setConfig] = useState({
@@ -415,8 +449,14 @@ export function ProvisionModal({ open, onOpenChange, onSuccess }: ProvisionModal
                     <TabsContent value="provision">
                         {step === 1 ? (
                             <div className="grid gap-4 py-4">
-                                <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg text-xs text-blue-400">
-                                    <strong>1. First Step:</strong> Connect your computer to the WiFi network: <strong>NEXORA_CAM_XXXX</strong>.
+                                <div className={`p-3 border rounded-lg text-xs flex items-center justify-between transition-colors ${cameraDetected ? 'bg-green-500/10 border-green-500/30 text-green-400' : 'bg-blue-500/10 border-blue-500/20 text-blue-400'}`}>
+                                    <div className="flex flex-col gap-1">
+                                        <strong>1. Connection Status:</strong>
+                                        <span>{cameraDetected ? '✓ ESP32-CAM READY' : 'Connect to: NEXORA_CAM_XXXX'}</span>
+                                    </div>
+                                    {cameraDetected && (
+                                        <Badge className="bg-green-500 text-white animate-pulse">Detected</Badge>
+                                    )}
                                 </div>
 
                                 <div className="grid gap-2">
@@ -441,7 +481,10 @@ export function ProvisionModal({ open, onOpenChange, onSuccess }: ProvisionModal
                                     />
                                 </div>
                                 <div className="grid gap-2">
-                                    <Label htmlFor="server">Server/Laptop IP Address</Label>
+                                    <div className="flex justify-between items-center">
+                                        <Label htmlFor="server">Server/Laptop IP Address</Label>
+                                        <span className="text-[10px] text-blue-400 font-medium">Use Local IP (e.g. 192.168.x.x)</span>
+                                    </div>
                                     <Input
                                         id="server"
                                         value={config.server_ip}
@@ -449,6 +492,19 @@ export function ProvisionModal({ open, onOpenChange, onSuccess }: ProvisionModal
                                         placeholder="192.168.x.x"
                                         className="bg-white/5 border-white/10"
                                     />
+                                    {tunnelUrl && (
+                                        <div className="flex flex-col gap-2 mt-1">
+                                            <span className="text-[10px] text-zinc-500">Suggested (Global Access):</span>
+                                            <Button
+                                                variant="secondary"
+                                                size="sm"
+                                                className="text-[10px] h-7 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20"
+                                                onClick={() => setConfig({ ...config, server_ip: tunnelUrl })}
+                                            >
+                                                Use Cloud Tunnel: {tunnelUrl.replace('https://', '')}
+                                            </Button>
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="grid gap-2">
                                     <Label htmlFor="name">Camera Nickname</Label>

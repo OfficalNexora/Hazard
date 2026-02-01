@@ -13,6 +13,7 @@ import {
     Compass
 } from 'lucide-react';
 import { usePublicState } from '@/lib/hooks';
+import { API_BASE_URL } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 // Dynamically import map
@@ -115,7 +116,7 @@ export default function PublicDashboard({ onUnpair }: PublicDashboardProps) {
                         <div className="relative aspect-video bg-black flex items-center justify-center">
                             {/* MJPEG Stream from Backend */}
                             <img
-                                src="http://localhost:8000/api/video_feed"
+                                src={`${API_BASE_URL}/api/video_feed`}
                                 alt="Live Camera Feed"
                                 className="w-full h-full object-cover"
                                 onError={(e) => {
